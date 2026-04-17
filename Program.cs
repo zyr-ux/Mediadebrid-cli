@@ -15,6 +15,8 @@ class Program
         {
             e.Cancel = true;
             cts.Cancel();
+            // Force exit if things are stuck
+            Environment.Exit(0);
         };
 
         // ── Interactive mode (no args) ─────────────────────────────────────
@@ -22,13 +24,27 @@ class Program
         {
             TuiApp.ShowLogo();
 
-            var magnet = AnsiConsole.Prompt(
-                new TextPrompt<string>("Enter [green]Magnet Link[/]:")
-                    .PromptStyle("green"));
-
-            if (!string.IsNullOrWhiteSpace(magnet))
+            try
             {
+                var magnet = AnsiConsole.Prompt(
+                    new TextPrompt<string>("Enter [green]Magnet Link[/]:")
+                        .PromptStyle("green")
+                        .Validate(m =>
+                        {
+                            if (string.IsNullOrWhiteSpace(m)) return ValidationResult.Error("[red]Magnet link cannot be empty.[/]");
+                            if (!m.StartsWith("magnet:?", StringComparison.OrdinalIgnoreCase)) return ValidationResult.Error("[red]Invalid magnet link format.[/]");
+                            return ValidationResult.Success();
+                        }));
+
                 await RunAppAsync(magnet, showLogo: false, cts.Token);
+            }
+            catch (TaskCanceledException)
+            {
+                // Already handled by CancelKeyPress and RunAppAsync
+            }
+            catch (OperationCanceledException)
+            {
+                // Already handled
             }
 
             return 0;
@@ -60,6 +76,10 @@ class Program
         catch (OperationCanceledException)
         {
             AnsiConsole.MarkupLine("\n[yellow]Termination requested. Cleaning up...[/]");
+        }
+        catch (Exception ex)
+        {
+            AnsiConsole.WriteException(ex);
         }
     }
 }
