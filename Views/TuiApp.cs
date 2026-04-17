@@ -176,6 +176,11 @@ public class TuiApp
                         progressTask.Value = progressTask.MaxValue;
                         progressTask.StopTask();
                     }
+                    catch (OperationCanceledException)
+                    {
+                        // Propagate cancellation upwards
+                        throw;
+                    }
                     catch (Exception ex)
                     {
                         AnsiConsole.MarkupLine($"[red]Download failed:[/] {ex.Message}");
@@ -185,7 +190,10 @@ public class TuiApp
                 await Task.WhenAll(downloadTasks);
             });
 
-        AnsiConsole.MarkupLine("\n[bold green]All downloads completed![/]");
+        if (!cancellationToken.IsCancellationRequested)
+        {
+            AnsiConsole.MarkupLine("\n[bold green]All downloads completed![/]");
+        }
     }
 
     // ── Private helpers ────────────────────────────────────────────────────
