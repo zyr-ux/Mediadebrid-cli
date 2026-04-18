@@ -1,28 +1,32 @@
 using System.Collections.Concurrent;
-using MediaDebrid_cli.Core;
 using MediaDebrid_cli.Models;
 using Spectre.Console;
+using System.Reflection;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using MediaDebrid_cli.Services;
 
 
-namespace MediaDebrid_cli.Views;
+namespace MediaDebrid_cli.Tui;
 
 public class TuiApp
 {
-    private readonly RealDebridClient _client;
+    private RealDebridClient? _client;
     private readonly Downloader _downloader;
     private readonly MetadataResolver _metadataResolver;
 
-    private ConcurrentDictionary<string, ProgressTask> _progressTasks;
+    private readonly ConcurrentDictionary<string, ProgressTask> _progressTasks;
 
     public TuiApp()
     {
-        _client = new RealDebridClient();
         _downloader = new Downloader();
         _downloader.ProgressChanged += OnDownloadProgressChanged;
         _metadataResolver = new MetadataResolver();
 
         _progressTasks = new ConcurrentDictionary<string, ProgressTask>();
     }
+
+    private RealDebridClient GetClient() => _client ??= new RealDebridClient();
 
     public static void ShowLogo()
     {
@@ -36,6 +40,15 @@ public class TuiApp
         if (showLogo)
         {
             ShowLogo();
+        }
+
+        try
+        {
+            await EnsureConfiguredAsync(cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
         }
 
         string torrentId = string.Empty;
@@ -80,7 +93,7 @@ public class TuiApp
                     if (!string.IsNullOrEmpty(hash))
                     {
                         ctx.Status($"[yellow]Checking for existing torrent with hash {hash}...[/]");
-                        var existingTorrents = await _client.GetTorrentsAsync(cancellationToken: cancellationToken);
+                        var existingTorrents = await GetClient().GetTorrentsAsync(cancellationToken: cancellationToken);
                         var matched = existingTorrents.FirstOrDefault(t => t.Hash.Equals(hash, StringComparison.OrdinalIgnoreCase));
 
                         if (matched != null)
@@ -93,14 +106,14 @@ public class TuiApp
                     if (string.IsNullOrEmpty(torrentId))
                     {
                         ctx.Status("[yellow]Submitting magnet to Real-Debrid...[/]");
-                        var addRes = await _client.AddMagnetAsync(magnet, cancellationToken: cancellationToken);
+                        var addRes = await GetClient().AddMagnetAsync(magnet, cancellationToken: cancellationToken);
                         torrentId = addRes.Id;
                         AnsiConsole.MarkupLine($"[green]✓[/] Magnet submitted. RD ID: [cyan]{torrentId}[/]");
                     }
 
                     // 3. Fetch torrent info and fall back to RD filename for metadata if needed
                     ctx.Status("[yellow]Fetching torrent info...[/]");
-                    info = await _client.GetTorrentInfoAsync(torrentId, cancellationToken: cancellationToken);
+                    info = await GetClient().GetTorrentInfoAsync(torrentId, cancellationToken: cancellationToken);
 
                     if (resolved == null)
                     {
@@ -118,7 +131,7 @@ public class TuiApp
                     ctx.Status("[yellow]Waiting for Real-Debrid status...[/]");
                     while (!cancellationToken.IsCancellationRequested)
                     {
-                        info = await _client.GetTorrentInfoAsync(torrentId, cancellationToken: cancellationToken);
+                        info = await GetClient().GetTorrentInfoAsync(torrentId, cancellationToken: cancellationToken);
                         if (info.Status is "waiting_files_selection" or "downloaded" or "dead") break;
                         await Task.Delay(2000, cancellationToken);
                     }
@@ -139,13 +152,13 @@ public class TuiApp
                             .ToArray();
                         if (!fileIds.Any()) fileIds = new[] { info.Files.First().Id.ToString() };
 
-                        await _client.SelectFilesAsync(torrentId, string.Join(",", fileIds), cancellationToken: cancellationToken);
+                        await GetClient().SelectFilesAsync(torrentId, string.Join(",", fileIds), cancellationToken: cancellationToken);
                         AnsiConsole.MarkupLine("[green]✓[/] Selected relevant files.");
 
                         ctx.Status("[yellow]Waiting for Real-Debrid to cache files...[/]");
                         while (!cancellationToken.IsCancellationRequested)
                         {
-                            info = await _client.GetTorrentInfoAsync(torrentId, cancellationToken: cancellationToken);
+                            info = await GetClient().GetTorrentInfoAsync(torrentId, cancellationToken: cancellationToken);
                             if (info.Status == "downloaded") break;
                             await Task.Delay(5000, cancellationToken);
                         }
@@ -185,7 +198,7 @@ public class TuiApp
                         ProgressTask? progressTask = null;
                         try
                         {
-                            var unrestricted = await _client.UnrestrictLinkAsync(link, cancellationToken: cancellationToken);
+                            var unrestricted = await GetClient().UnrestrictLinkAsync(link, cancellationToken: cancellationToken);
                             string filename = unrestricted.Filename;
                             string destPath = PathGenerator.GetDestinationPath(resolved.Type, resolved.Title, resolved.Year, filename, resolved.Season);
 
@@ -233,6 +246,170 @@ public class TuiApp
         {
             AnsiConsole.MarkupLine($"\n[red]Critical error during download process:[/] {ex.Message}");
         }
+    }
+
+    public async Task RunInteractiveAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await EnsureConfiguredAsync(cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        ShowLogo();
+
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            string? magnet;
+            try
+            {
+                magnet = await CancellablePromptAsync(
+                    new TextPrompt<string>("Enter [green]Magnet Link[/]:")
+                        .PromptStyle("white")
+                        .Validate(k =>
+                        {
+                            if (string.IsNullOrWhiteSpace(k)) return ValidationResult.Error("[red]Magnet link cannot be empty.[/]");
+                            if (!k.StartsWith("magnet:?", StringComparison.OrdinalIgnoreCase)) return ValidationResult.Error("[red]Invalid magnet link format.[/]");
+                            if (MagnetParser.ExtractHash(k) == null) return ValidationResult.Error("[red]Invalid magnet link: Missing BTIH hash (xt=urn:btih:).[/]");
+                            return ValidationResult.Success();
+                        }),
+                    cancellationToken
+                );
+            }
+            catch (OperationCanceledException)
+            {
+                AnsiConsole.MarkupLine("\n[red]Application terminated. Exiting...[/]");
+                break;
+            }
+
+            if (magnet is null || cancellationToken.IsCancellationRequested) break;
+
+            await RunAsync(magnet, showLogo: false, cancellationToken: cancellationToken);
+            break; // Exit after one run in this version, or remove break to loop
+        }
+    }
+
+    public async Task EnsureConfiguredAsync(CancellationToken cancellationToken)
+    {
+        if (Settings.IsConfigured()) return;
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        ShowLogo();
+        AnsiConsole.MarkupLine("\n[yellow]Initial Setup Required[/]");
+        AnsiConsole.MarkupLine("Please provide the following required configuration values:\n");
+
+        try
+        {
+            if (string.IsNullOrWhiteSpace(Settings.Instance.RealDebridApiToken))
+            {
+                Settings.Instance.RealDebridApiToken = await CancellablePromptAsync(
+                    new TextPrompt<string>("Enter [green]Real-Debrid API Key[/]:")
+                        .PromptStyle("white")
+                        .Secret()
+                        .Validate(k => string.IsNullOrWhiteSpace(k) ? ValidationResult.Error("[red]Key cannot be empty.[/]") : ValidationResult.Success()),
+                    cancellationToken
+                );
+            }
+
+            if (string.IsNullOrWhiteSpace(Settings.Instance.TmdbReadAccessToken))
+            {
+                Settings.Instance.TmdbReadAccessToken = await CancellablePromptAsync(
+                    new TextPrompt<string>("Enter [green]TMDB Read Access Token[/]:")
+                        .PromptStyle("white")
+                        .Secret()
+                        .Validate(k => string.IsNullOrWhiteSpace(k) ? ValidationResult.Error("[red]Token cannot be empty.[/]") : ValidationResult.Success()),
+                    cancellationToken
+                );
+            }
+
+            if (Settings.Instance.MediaRoot == "./media" || string.IsNullOrWhiteSpace(Settings.Instance.MediaRoot))
+            {
+                Settings.Instance.MediaRoot = await CancellablePromptAsync(
+                    new TextPrompt<string>("Enter [green]Media Root Path[/]:")
+                        .DefaultValue("./media")
+                        .PromptStyle("white"),
+                    cancellationToken
+                );
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            AnsiConsole.MarkupLine("\n[red]Setup cancelled. Exiting...[/]");
+            throw;
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        Settings.Save();
+        AnsiConsole.MarkupLine("\n[green]Configuration saved successfully![/]\n");
+    }
+
+    public void SetConfigurationValue(string key, string value)
+    {
+        var properties = typeof(AppSettings).GetProperties();
+        foreach (var prop in properties)
+        {
+            var attr = prop.GetCustomAttribute<JsonPropertyNameAttribute>();
+            var propName = attr != null ? attr.Name : prop.Name;
+
+            if (propName.Equals(key, StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    object convertedValue = Convert.ChangeType(value, prop.PropertyType);
+                    prop.SetValue(Settings.Instance, convertedValue);
+                    Settings.Save();
+                    AnsiConsole.MarkupLine($"[green]Successfully updated '{key}' to '{value}'[/]");
+                    return;
+                }
+                catch (Exception)
+                {
+                    AnsiConsole.MarkupLine($"[red]Failed to convert '{value}' to type {prop.PropertyType.Name} for key '{key}'[/]");
+                    return;
+                }
+            }
+        }
+
+        AnsiConsole.MarkupLine($"[red]Configuration key '{key}' not found.[/]");
+        AnsiConsole.MarkupLine("Available keys:");
+        foreach (var prop in properties)
+        {
+            var attr = prop.GetCustomAttribute<JsonPropertyNameAttribute>();
+            var propName = attr != null ? attr.Name : prop.Name;
+            AnsiConsole.MarkupLine($"- [cyan]{propName}[/] ({prop.PropertyType.Name})");
+        }
+    }
+
+    public void ListConfiguration()
+    {
+        var options = new JsonSerializerOptions { WriteIndented = true };
+        var json = JsonSerializer.Serialize(Settings.Instance, options);
+        AnsiConsole.MarkupLine("[cyan]Current Configuration:[/]");
+        Console.WriteLine(json);
+    }
+
+    private async Task<T> CancellablePromptAsync<T>(IPrompt<T> prompt, CancellationToken cancellationToken)
+    {
+        var tcs = new TaskCompletionSource<T>();
+        using var registration = cancellationToken.Register(() => tcs.TrySetCanceled());
+
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                var result = AnsiConsole.Prompt(prompt);
+                tcs.TrySetResult(result);
+            }
+            catch (Exception ex)
+            {
+                tcs.TrySetException(ex);
+            }
+        }, cancellationToken);
+
+        return await tcs.Task;
     }
 
     // ── Private helpers ────────────────────────────────────────────────────
