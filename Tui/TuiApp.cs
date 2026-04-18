@@ -247,7 +247,7 @@ public class TuiApp
         }
         catch (OperationCanceledException)
         {
-            AnsiConsole.MarkupLine("\n[red]Termination requested. Cleaning up...[/]");
+            AnsiConsole.MarkupLine("[red]Termination requested. Cleaning up...[/]");
             // Wait for background tasks to finish their cancellation and release file handles
             try { await Task.WhenAll(allDownloadTasks); } catch { /* Ignore cancellation errors */ }
             Downloader.CleanupFiles(activePaths);
