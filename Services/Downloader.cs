@@ -20,8 +20,9 @@ public class Downloader
         CleanupFiles(_activeTempFiles.Keys);
     }
 
-    public static void CleanupFiles(IEnumerable<string> tempPaths)
+    public static void CleanupFiles(IEnumerable<string> tempPaths, string? rootPath = null)
     {
+        rootPath ??= Settings.Instance.MediaRoot;
         foreach (var path in tempPaths.ToList())
         {
             try
@@ -29,10 +30,7 @@ public class Downloader
                 if (File.Exists(path)) File.Delete(path);
                 
                 string? dir = Path.GetDirectoryName(path);
-                if (dir != null && Directory.Exists(dir) && !Directory.EnumerateFileSystemEntries(dir).Any())
-                {
-                    Directory.Delete(dir);
-                }
+                if (dir != null) DeleteEmptyDirectories(dir, rootPath);
             }
             catch { /* Ignore cleanup errors */ }
             finally
@@ -42,30 +40,9 @@ public class Downloader
         }
     }
 
-    public static void CleanupStaleFiles(string rootPath)
-    {
-        if (string.IsNullOrWhiteSpace(rootPath) || !Directory.Exists(rootPath)) return;
-
-        try
-        {
-            var files = Directory.GetFiles(rootPath, "*.mdebrid", SearchOption.AllDirectories);
-            foreach (var file in files)
-            {
-                try
-                {
-                    string? dir = Path.GetDirectoryName(file);
-                    File.Delete(file);
-                    if (dir != null) DeleteEmptyDirectories(dir, rootPath);
-                }
-                catch { }
-            }
-        }
-        catch { /* Ignore errors accessing directories */ }
-    }
-
     private static void DeleteEmptyDirectories(string? directoryPath, string rootPath)
     {
-        if (string.IsNullOrEmpty(directoryPath)) return;
+        if (string.IsNullOrEmpty(directoryPath) || string.IsNullOrEmpty(rootPath)) return;
 
         try
         {
@@ -102,6 +79,7 @@ public class Downloader
             // Ignore errors during directory cleanup
         }
     }
+
 
     public event EventHandler<DownloadProgressModel>? ProgressChanged;
 
@@ -197,7 +175,7 @@ public class Downloader
         }
         catch
         {
-            _activeTempFiles.TryRemove(tempPath, out _);
+            CleanupFiles(new[] { tempPath });
             throw;
         }
     }
@@ -249,7 +227,7 @@ public class Downloader
         }
         catch
         {
-            _activeTempFiles.TryRemove(tempPath, out _);
+            CleanupFiles(new[] { tempPath });
             throw;
         }
     }

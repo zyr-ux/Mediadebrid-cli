@@ -33,7 +33,7 @@ public class TuiApp
         AnsiConsole.Write(new FigletText("MediaDebrid").Color(Color.Green));
     }
 
-    public async Task RunAsync(string magnet, string? typeOverride = null, string? titleOverride = null, string? yearOverride = null, int? seasonOverride = null, bool showLogo = true, CancellationToken cancellationToken = default)
+    public async Task RunAsync(string magnet, string? typeOverride = null, string? titleOverride = null, string? yearOverride = null, int? seasonOverride = null, int? episodeOverride = null, bool showLogo = true, CancellationToken cancellationToken = default)
     {
         if (showLogo)
         {
@@ -67,14 +67,7 @@ public class TuiApp
                 ctx.Spinner(Spinner.Known.Dots);
                 ctx.SpinnerStyle(Style.Parse("green"));
 
-                void ApplyOverrides(TMDBModels meta)
-                {
-                    if (!string.IsNullOrWhiteSpace(titleOverride)) meta.Title = titleOverride.Trim();
-                    if (!string.IsNullOrWhiteSpace(typeOverride)) meta.Type = typeOverride.Trim().ToLowerInvariant();
-                    if (!string.IsNullOrWhiteSpace(yearOverride)) meta.Year = yearOverride.Trim();
-                    if (seasonOverride.HasValue) meta.Season = seasonOverride;
-                    if (meta.Season == null && meta.Type == "show") meta.Season = 1;
-                }
+                void ApplyOverrides(TMDBModels meta) => Utils.ApplyMetadataOverrides(meta, typeOverride, titleOverride, yearOverride, seasonOverride, episodeOverride);
 
                 try
                 {
@@ -137,11 +130,13 @@ public class TuiApp
                     if (info.Status == "waiting_files_selection")
                     {
                         ctx.Status("[yellow]Selecting files...[/]");
-                        var fileIds = info.Files
-                            .Where(f => f.Bytes > 50_000_000)
-                            .Select(f => f.Id.ToString())
-                            .ToArray();
+                        var fileIds = Utils.GetSelectedFiles(info.Files, episodeOverride);
                         if (!fileIds.Any()) fileIds = new[] { info.Files.First().Id.ToString() };
+
+                        if (episodeOverride.HasValue && !info.Files.Any(f => Utils.IsEpisodeMatch(f.Path, episodeOverride.Value)))
+                        {
+                            AnsiConsole.MarkupLine($"[yellow]⚠[/] No files found matching episode [cyan]{episodeOverride.Value}[/]. Falling back to largest files.");
+                        }
 
                         await GetClient().SelectFilesAsync(torrentId, string.Join(",", fileIds), cancellationToken: cancellationToken);
                         AnsiConsole.MarkupLine("[green]✓[/] Selected relevant files.");
@@ -354,44 +349,30 @@ public class TuiApp
 
     public void SetConfigurationValue(string key, string value)
     {
-        var properties = typeof(AppSettings).GetProperties();
-        foreach (var prop in properties)
+        var (success, message, _) = Utils.UpdateConfiguration(key, value);
+        if (success)
         {
-            var attr = prop.GetCustomAttribute<JsonPropertyNameAttribute>();
-            var propName = attr != null ? attr.Name : prop.Name;
-
-            if (propName.Equals(key, StringComparison.OrdinalIgnoreCase))
+            AnsiConsole.MarkupLine($"[green]{message}[/]");
+        }
+        else
+        {
+            AnsiConsole.MarkupLine($"[red]{message}[/]");
+            if (message.Contains("not found"))
             {
-                try
+                AnsiConsole.MarkupLine("Available keys:");
+                foreach (var prop in typeof(AppSettings).GetProperties())
                 {
-                    object convertedValue = Convert.ChangeType(value, prop.PropertyType);
-                    prop.SetValue(Settings.Instance, convertedValue);
-                    Settings.Save();
-                    AnsiConsole.MarkupLine($"[green]Successfully updated '{key}' to '{value}'[/]");
-                    return;
-                }
-                catch (Exception)
-                {
-                    AnsiConsole.MarkupLine($"[red]Failed to convert '{value}' to type {prop.PropertyType.Name} for key '{key}'[/]");
-                    return;
+                    var attr = prop.GetCustomAttribute<JsonPropertyNameAttribute>();
+                    var propName = attr != null ? attr.Name : prop.Name;
+                    AnsiConsole.MarkupLine($"- [cyan]{propName}[/] ({prop.PropertyType.Name})");
                 }
             }
-        }
-
-        AnsiConsole.MarkupLine($"[red]Configuration key '{key}' not found.[/]");
-        AnsiConsole.MarkupLine("Available keys:");
-        foreach (var prop in properties)
-        {
-            var attr = prop.GetCustomAttribute<JsonPropertyNameAttribute>();
-            var propName = attr != null ? attr.Name : prop.Name;
-            AnsiConsole.MarkupLine($"- [cyan]{propName}[/] ({prop.PropertyType.Name})");
         }
     }
 
     public void ListConfiguration()
     {
-        var options = new JsonSerializerOptions { WriteIndented = true };
-        var json = JsonSerializer.Serialize(Settings.Instance, options);
+        var json = Utils.GetSettingsJson();
         AnsiConsole.MarkupLine("[cyan]Current Configuration:[/]");
         Console.WriteLine(json);
     }
