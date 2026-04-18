@@ -2,7 +2,7 @@ using System.Text.RegularExpressions;
 using MediaDebrid_cli.Models;
 using TMDbLib.Client;
 
-namespace MediaDebrid_cli.Core;
+namespace MediaDebrid_cli.Services;
 
 public class MetadataResolver
 {

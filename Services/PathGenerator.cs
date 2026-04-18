@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 
-namespace MediaDebrid_cli.Core;
+namespace MediaDebrid_cli.Services;
 
 public static class PathGenerator
 {

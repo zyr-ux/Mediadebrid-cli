@@ -1,9 +1,9 @@
-using System.Net.Http.Headers;
 using System.Collections.Concurrent;
+using System.Net.Http.Headers;
 using System.Runtime.InteropServices;
 using MediaDebrid_cli.Models;
 
-namespace MediaDebrid_cli.Core;
+namespace MediaDebrid_cli.Services;
 
 public class Downloader
 {

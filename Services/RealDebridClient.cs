@@ -3,7 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using MediaDebrid_cli.Models;
 
-namespace MediaDebrid_cli.Core;
+namespace MediaDebrid_cli.Services;
 
 public class RealDebridClient
 {
