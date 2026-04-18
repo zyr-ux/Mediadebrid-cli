@@ -7,7 +7,6 @@ using System.Text.Json.Serialization;
 using MediaDebrid_cli.Services;
 using Spectre.Console.Rendering;
 
-
 namespace MediaDebrid_cli.Tui;
 
 public class TuiApp
@@ -31,9 +30,7 @@ public class TuiApp
 
     public static void ShowLogo()
     {
-        AnsiConsole.Write(
-            new FigletText("MediaDebrid")
-                .Color(Color.Green));
+        AnsiConsole.Write(new FigletText("MediaDebrid").Color(Color.Green));
     }
 
     public async Task RunAsync(string magnet, string? typeOverride = null, string? titleOverride = null, string? yearOverride = null, int? seasonOverride = null, bool showLogo = true, CancellationToken cancellationToken = default)
@@ -54,7 +51,7 @@ public class TuiApp
             return;
         }
 
-        string torrentId = string.Empty;
+        var torrentId = string.Empty;
         TorrentInfo? info = null;
         TMDBModels? resolved = null;
 
@@ -81,8 +78,7 @@ public class TuiApp
 
                 try
                 {
-                    // 1. Resolve metadata from the magnet display name first
-                    string? magnetName = MagnetParser.ExtractName(magnet);
+                    var magnetName = MagnetParser.ExtractName(magnet);
                     if (!string.IsNullOrEmpty(magnetName))
                     {
                         ctx.Status("[yellow]Resolving metadata from magnet...[/]");
@@ -91,8 +87,7 @@ public class TuiApp
                         RenderMetadataPanel(resolved, magnetName);
                     }
 
-                    // 2. Submit or reuse existing torrent on Real-Debrid
-                    string? hash = MagnetParser.ExtractHash(magnet);
+                    var hash = MagnetParser.ExtractHash(magnet);
                     if (!string.IsNullOrEmpty(hash))
                     {
                         ctx.Status($"[yellow]Checking for existing torrent with hash {hash}...[/]");
@@ -114,7 +109,6 @@ public class TuiApp
                         AnsiConsole.MarkupLine($"[green]✓[/] Magnet submitted. RD ID: [cyan]{torrentId}[/]");
                     }
 
-                    // 3. Fetch torrent info and fall back to RD filename for metadata if needed
                     ctx.Status("[yellow]Fetching torrent info...[/]");
                     info = await GetClient().GetTorrentInfoAsync(torrentId, cancellationToken: cancellationToken);
 
@@ -126,8 +120,6 @@ public class TuiApp
                         RenderMetadataPanel(resolved, info.Filename);
                     }
 
-
-                    // 4. Wait for Real-Debrid to be ready for file selection
                     ctx.Status("[yellow]Waiting for Real-Debrid status...[/]");
                     while (!cancellationToken.IsCancellationRequested)
                     {
@@ -142,7 +134,6 @@ public class TuiApp
                         return;
                     }
 
-                    // 5. Select relevant files and wait for caching
                     if (info.Status == "waiting_files_selection")
                     {
                         ctx.Status("[yellow]Selecting files...[/]");
@@ -188,7 +179,7 @@ public class TuiApp
                 .AutoClear(false)
                 .Columns(
                     new TaskDescriptionColumn(),
-                    new ProgressBarColumn(),
+                    new ProgressBarColumn { Width = 200 },
                     new PercentageColumn(),
                     new DownloadedColumn(),
                     new TransferSpeedColumn(),
@@ -201,13 +192,15 @@ public class TuiApp
                         try
                         {
                             var unrestricted = await GetClient().UnrestrictLinkAsync(link, cancellationToken: cancellationToken);
-                            string filename = unrestricted.Filename;
-                            string destPath = PathGenerator.GetDestinationPath(resolved.Type, resolved.Title, resolved.Year, filename, resolved.Season);
-                            string progressKey = destPath;
-                            string tempPath = destPath + ".mdebrid";
+                            var filename = unrestricted.Filename;
+                            var destPath = PathGenerator.GetDestinationPath(resolved.Type, resolved.Title, resolved.Year, filename, resolved.Season);
+                            var progressKey = destPath;
+                            var tempPath = destPath + ".mdebrid";
                             activePaths.Add(tempPath);
 
-                            progressTask = ctx.AddTask($"[cyan]{filename}[/]", new ProgressTaskSettings { AutoStart = false, MaxValue = 100 });
+                            var displayFilename = filename.Length > 40 ? filename[..37] + "..." : filename;
+
+                            progressTask = ctx.AddTask($"[cyan]{displayFilename}[/]", new ProgressTaskSettings { AutoStart = false });
                             _progressTasks[progressKey] = progressTask;
                             progressTask.StartTask();
 
@@ -234,7 +227,7 @@ public class TuiApp
                     while (!whenAllTask.IsCompleted)
                     {
                         if (cancellationToken.IsCancellationRequested) throw new OperationCanceledException(cancellationToken);
-                        await Task.Delay(200);
+                        await Task.Delay(200, cancellationToken);
                     }
                     await whenAllTask;
                 });
@@ -248,8 +241,7 @@ public class TuiApp
         {
             var ex = new TerminationException("[red]Termination requested. Cleaning up...[/]");
             ex.Print();
-            // Wait for background tasks to finish their cancellation and release file handles
-            try { await Task.WhenAll(allDownloadTasks); } catch { /* Ignore cancellation errors */ }
+            try { await Task.WhenAll(allDownloadTasks); } catch { }
             Downloader.CleanupFiles(activePaths);
             throw ex;
         }
@@ -300,7 +292,7 @@ public class TuiApp
             if (magnet is null || cancellationToken.IsCancellationRequested) break;
 
             await RunAsync(magnet, showLogo: false, cancellationToken: cancellationToken);
-            break; // Exit after one run in this version, or remove break to loop
+            break; 
         }
     }
 
@@ -425,8 +417,6 @@ public class TuiApp
         return await tcs.Task;
     }
 
-    // ── Private helpers ────────────────────────────────────────────────────
-
     private static void RenderMetadataPanel(TMDBModels meta, string sourceLabel)
     {
         var panel = new Panel(new Grid()
@@ -448,7 +438,11 @@ public class TuiApp
     {
         if (_progressTasks.TryGetValue(e.ProgressKey, out var task))
         {
-            task.MaxValue = e.TotalBytes;
+            if (task.MaxValue != e.TotalBytes && e.TotalBytes > 0)
+            {
+                task.MaxValue = e.TotalBytes;
+            }
+
             task.Value = e.BytesDownloaded;
         }
     }
