@@ -18,7 +18,7 @@ public static class Utils
         if (meta.Season == null && meta.Type == "show") meta.Season = 1;
     }
 
-    public static string[] GetSelectedFiles(List<TorrentFile> files, int? episodeOverride)
+    public static string[] GetSelectedFiles(List<TorrentFile> files, int? episodeOverride, HashSet<int>? existingEpisodes = null)
     {
         var fileIds = files
             .Where(f =>
@@ -28,6 +28,13 @@ public static class Utils
                 {
                     return IsEpisodeMatch(f.Path, episodeOverride.Value);
                 }
+                
+                if (existingEpisodes != null && Settings.Instance.SkipExistingEpisodes)
+                {
+                    var ep = ExtractEpisodeNumber(f.Path);
+                    if (ep.HasValue && existingEpisodes.Contains(ep.Value)) return false;
+                }
+
                 return true;
             })
             .Select(f => f.Id.ToString())
@@ -91,5 +98,46 @@ public static class Utils
         // Fallback for cases like "Show Title 05.mkv"
         var fallbackPattern = $@"(?i)(?:\s|^)(0*{episodeNumber})\b";
         return Regex.IsMatch(path, fallbackPattern);
+    }
+
+    public static int? ExtractEpisodeNumber(string input)
+    {
+        if (string.IsNullOrEmpty(input)) return null;
+        
+        // Try to match episode number (e.g., E05, Episode 5, x05)
+        var epPattern = @"(?i)(?:E|Episode\s*|x)0*(\d+)\b";
+        var match = Regex.Match(input, epPattern);
+        if (match.Success && int.TryParse(match.Groups[1].Value, out int ep)) return ep;
+
+        // Fallback for cases like "Show Title 05.mkv"
+        var fallbackPattern = @"(?i)(?:\s|^)0*(\d+)\b";
+        match = Regex.Match(input, fallbackPattern);
+        if (match.Success && int.TryParse(match.Groups[1].Value, out int fallbackEp)) return fallbackEp;
+
+        return null;
+    }
+
+    private static readonly string[] VideoExtensions = { ".mkv", ".mp4", ".avi", ".m4v", ".mov", ".ts", ".wmv" };
+
+    public static HashSet<int> GetExistingEpisodes(string directory)
+    {
+        var existing = new HashSet<int>();
+        if (!Directory.Exists(directory)) return existing;
+
+        try
+        {
+            var files = Directory.GetFiles(directory, "*.*", SearchOption.TopDirectoryOnly);
+            foreach (var file in files)
+            {
+                if (VideoExtensions.Contains(Path.GetExtension(file).ToLowerInvariant()))
+                {
+                    var ep = ExtractEpisodeNumber(Path.GetFileName(file));
+                    if (ep.HasValue) existing.Add(ep.Value);
+                }
+            }
+        }
+        catch { /* Ignore IO errors during scan */ }
+
+        return existing;
     }
 }

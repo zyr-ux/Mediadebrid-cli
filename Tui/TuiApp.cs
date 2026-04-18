@@ -127,10 +127,27 @@ public class TuiApp
                         return;
                     }
 
+                    HashSet<int>? existingEpisodes = null;
+                    if (resolved.Type == "show" && Settings.Instance.SkipExistingEpisodes)
+                    {
+                        var seasonDir = PathGenerator.GetSeasonDirectory(resolved.Type, resolved.Title, resolved.Year, resolved.Season);
+                        existingEpisodes = Utils.GetExistingEpisodes(seasonDir);
+
+                        if (existingEpisodes.Any())
+                        {
+                            if (episodeOverride.HasValue && existingEpisodes.Contains(episodeOverride.Value))
+                            {
+                                throw new TerminationException($"[red]Episode {episodeOverride.Value} already exists in your local library.[/]");
+                            }
+
+                            AnsiConsole.MarkupLine($"[yellow]⚠[/] Found [cyan]{existingEpisodes.Count}[/] existing episodes in local library. They will be skipped.");
+                        }
+                    }
+
                     if (info.Status == "waiting_files_selection")
                     {
                         ctx.Status("[yellow]Selecting files...[/]");
-                        var fileIds = Utils.GetSelectedFiles(info.Files, episodeOverride);
+                        var fileIds = Utils.GetSelectedFiles(info.Files, episodeOverride, existingEpisodes);
                         if (!fileIds.Any()) fileIds = new[] { info.Files.First().Id.ToString() };
 
                         if (episodeOverride.HasValue && !info.Files.Any(f => Utils.IsEpisodeMatch(f.Path, episodeOverride.Value)))
@@ -189,6 +206,24 @@ public class TuiApp
                             var unrestricted = await GetClient().UnrestrictLinkAsync(link, cancellationToken: cancellationToken);
                             var filename = unrestricted.Filename;
                             var destPath = PathGenerator.GetDestinationPath(resolved.Type, resolved.Title, resolved.Year, filename, resolved.Season);
+                            
+                            // Skip if file already exists or episode already exists
+                            if (File.Exists(destPath))
+                            {
+                                AnsiConsole.MarkupLine($"[yellow]⚠[/] Skipping [cyan]{filename}[/] (Already exists locally)");
+                                return;
+                            }
+
+                            if (resolved.Type == "show" && Settings.Instance.SkipExistingEpisodes)
+                            {
+                                var ep = Utils.ExtractEpisodeNumber(filename);
+                                if (ep.HasValue && existingEpisodes != null && existingEpisodes.Contains(ep.Value))
+                                {
+                                    AnsiConsole.MarkupLine($"[yellow]⚠[/] Skipping [cyan]{filename}[/] (Episode {ep.Value} already exists)");
+                                    return;
+                                }
+                            }
+
                             var progressKey = destPath;
                             var tempPath = destPath + ".mdebrid";
                             activePaths.Add(tempPath);

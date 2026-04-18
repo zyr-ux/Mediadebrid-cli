@@ -6,25 +6,31 @@ public static class PathGenerator
 {
     public static string GetDestinationPath(string mediaType, string title, string year, string filename, int? season = null)
     {
+        string safeFilename = Sanitize(filename);
+        string baseDir = GetSeasonDirectory(mediaType, title, year, season);
+        return Path.Combine(baseDir, safeFilename);
+    }
+
+    public static string GetSeasonDirectory(string mediaType, string title, string year, int? season = null)
+    {
         string baseDir = Settings.MediaRoot;
         string safeTitle = Sanitize(title);
         string safeYear = Sanitize(year);
-        string safeFilename = Sanitize(filename);
 
         string folderName = string.IsNullOrWhiteSpace(safeYear) ? safeTitle : $"{safeTitle} ({safeYear})";
 
         if (mediaType.Equals("movie", StringComparison.OrdinalIgnoreCase))
         {
-            return Path.Combine(baseDir, "Movies", folderName, safeFilename);
+            return Path.Combine(baseDir, "Movies", folderName);
         }
         else if (mediaType.Equals("show", StringComparison.OrdinalIgnoreCase))
         {
             string seasonStr = season.HasValue ? $"Season {season.Value:D2}" : "Season 01";
-            return Path.Combine(baseDir, "TV Shows", folderName, seasonStr, safeFilename);
+            return Path.Combine(baseDir, "TV Shows", folderName, seasonStr);
         }
         else
         {
-            return Path.Combine(baseDir, "Other", safeFilename);
+            return Path.Combine(baseDir, "Other");
         }
     }
 

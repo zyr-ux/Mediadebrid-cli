@@ -21,4 +21,7 @@ public class AppSettings
 
     [JsonPropertyName("tmdb_cache_ttl")]
     public int TmdbCacheTtlSeconds { get; set; } = 86400;
+
+    [JsonPropertyName("skip_existing_episodes")]
+    public bool SkipExistingEpisodes { get; set; } = true;
 }
