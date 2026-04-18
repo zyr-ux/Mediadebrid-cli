@@ -42,6 +42,8 @@ public class TuiApp
             ShowLogo();
         }
 
+        _progressTasks.Clear();
+
         try
         {
             await EnsureConfiguredAsync(cancellationToken);
@@ -180,6 +182,8 @@ public class TuiApp
 
         AnsiConsole.MarkupLine("\n[bold]Starting Downloads...[/]");
 
+        var activePaths = new ConcurrentBag<string>();
+        var allDownloadTasks = new List<Task>();
         try
         {
             await AnsiConsole.Progress()
@@ -193,7 +197,7 @@ public class TuiApp
                     new RemainingTimeColumn())
                 .StartAsync(async ctx =>
                 {
-                    var downloadTasks = info.Links.Select(async link =>
+                    var tasks = info.Links.Select(async link =>
                     {
                         ProgressTask? progressTask = null;
                         try
@@ -201,6 +205,8 @@ public class TuiApp
                             var unrestricted = await GetClient().UnrestrictLinkAsync(link, cancellationToken: cancellationToken);
                             string filename = unrestricted.Filename;
                             string destPath = PathGenerator.GetDestinationPath(resolved.Type, resolved.Title, resolved.Year, filename, resolved.Season);
+                            string tempPath = destPath + ".mdebrid";
+                            activePaths.Add(tempPath);
 
                             progressTask = ctx.AddTask($"[cyan]{filename}[/]", new ProgressTaskSettings { AutoStart = false, MaxValue = 100 });
                             _progressTasks[filename] = progressTask;
@@ -221,16 +227,17 @@ public class TuiApp
                             progressTask?.StopTask();
                             AnsiConsole.MarkupLine($"[red]Download failed:[/] {ex.Message}");
                         }
-                    });
+                    }).ToList();
 
-                    try
+                    allDownloadTasks.AddRange(tasks);
+
+                    var whenAllTask = Task.WhenAll(tasks);
+                    while (!whenAllTask.IsCompleted)
                     {
-                        await Task.WhenAll(downloadTasks);
+                        if (cancellationToken.IsCancellationRequested) throw new OperationCanceledException(cancellationToken);
+                        await Task.Delay(200);
                     }
-                    catch (OperationCanceledException)
-                    {
-                        // Expected on cancellation, allow the progress block to finish gracefully
-                    }
+                    await whenAllTask;
                 });
 
             if (!cancellationToken.IsCancellationRequested)
@@ -240,7 +247,11 @@ public class TuiApp
         }
         catch (OperationCanceledException)
         {
-            AnsiConsole.MarkupLine("\n[yellow]! Download process cancelled by user.[/]");
+            AnsiConsole.MarkupLine("\n[red]Termination requested. Cleaning up...[/]");
+            // Wait for background tasks to finish their cancellation and release file handles
+            try { await Task.WhenAll(allDownloadTasks); } catch { /* Ignore cancellation errors */ }
+            Downloader.CleanupFiles(activePaths);
+            throw;
         }
         catch (Exception ex)
         {

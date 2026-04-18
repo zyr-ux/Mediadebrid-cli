@@ -17,13 +17,28 @@ public class Downloader
 
     public static void CleanupStatic()
     {
-        foreach (var file in _activeTempFiles.Keys)
+        CleanupFiles(_activeTempFiles.Keys);
+    }
+
+    public static void CleanupFiles(IEnumerable<string> tempPaths)
+    {
+        foreach (var path in tempPaths.ToList())
         {
             try
             {
-                if (File.Exists(file)) File.Delete(file);
+                if (File.Exists(path)) File.Delete(path);
+                
+                string? dir = Path.GetDirectoryName(path);
+                if (dir != null && Directory.Exists(dir) && !Directory.EnumerateFileSystemEntries(dir).Any())
+                {
+                    Directory.Delete(dir);
+                }
             }
-            catch { /* Ignore */ }
+            catch { /* Ignore cleanup errors */ }
+            finally
+            {
+                _activeTempFiles.TryRemove(path, out _);
+            }
         }
     }
 
@@ -57,16 +72,24 @@ public class Downloader
             var currentDir = new DirectoryInfo(directoryPath);
             var rootDir = new DirectoryInfo(Path.GetFullPath(rootPath));
 
-            while (currentDir.Exists &&
+            while (currentDir != null && currentDir.Exists &&
                    currentDir.FullName.Length > rootDir.FullName.Length &&
                    currentDir.FullName.StartsWith(rootDir.FullName, StringComparison.OrdinalIgnoreCase))
             {
+                // Refresh to get latest state
+                currentDir.Refresh();
+                if (!currentDir.Exists) break;
+
                 // Check if directory is empty
                 if (currentDir.GetFileSystemInfos().Length == 0)
                 {
-                    currentDir.Delete();
+                    try
+                    {
+                        currentDir.Delete();
+                    }
+                    catch (IOException) { /* Directory might have become non-empty or been deleted */ break; }
+                    
                     currentDir = currentDir.Parent;
-                    if (currentDir == null) break;
                 }
                 else
                 {
@@ -173,8 +196,6 @@ public class Downloader
         catch
         {
             _activeTempFiles.TryRemove(tempPath, out _);
-            if (File.Exists(tempPath)) File.Delete(tempPath);
-            DeleteEmptyDirectories(Path.GetDirectoryName(destPath), Settings.MediaRoot);
             throw;
         }
     }
@@ -222,18 +243,9 @@ public class Downloader
             fileStream.Close();
             FinalizeDownload(tempPath, destPath);
         }
-        catch (OperationCanceledException)
-        {
-            _activeTempFiles.TryRemove(tempPath, out _);
-            if (File.Exists(tempPath)) File.Delete(tempPath);
-            DeleteEmptyDirectories(Path.GetDirectoryName(destPath), Settings.MediaRoot);
-            throw;
-        }
         catch
         {
             _activeTempFiles.TryRemove(tempPath, out _);
-            if (File.Exists(tempPath)) File.Delete(tempPath);
-            DeleteEmptyDirectories(Path.GetDirectoryName(destPath), Settings.MediaRoot);
             throw;
         }
     }

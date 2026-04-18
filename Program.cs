@@ -52,7 +52,7 @@ internal static class Program
             }
             catch (OperationCanceledException)
             {
-                AnsiConsole.MarkupLine("\n[red]Termination requested. Cleaning up...[/]");
+                // Message already printed in CancelKeyPress or RunAsync
             }
             catch (Exception ex)
             {
@@ -88,7 +88,14 @@ internal static class Program
         // ── Interactive mode (no args) ─────────────────────────────────────
         if (args.Length == 0)
         {
-            await app.RunInteractiveAsync(cts.Token);
+            try
+            {
+                await app.RunInteractiveAsync(cts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                // Already handled by the immediate message in CancelKeyPress or inner handlers
+            }
             return 0;
         }
 
