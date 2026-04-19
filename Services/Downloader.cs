@@ -146,7 +146,6 @@ public class Downloader
             int read;
             while ((read = await stream.ReadAsync(buffer, 0, buffer.Length, cancellationToken)) > 0)
             {
-                if (cancellationToken.IsCancellationRequested) break;
                 await fileStream.WriteAsync(buffer, 0, read, cancellationToken);
                 var currentDownloaded = Interlocked.Add(ref bytesDownloaded, read);
 
@@ -157,23 +156,28 @@ public class Downloader
                     var elapsed = (DateTime.UtcNow - startTime).TotalSeconds;
                     double speed = elapsed > 0 ? currentDownloaded / elapsed : 0;
 
-                    if (!cancellationToken.IsCancellationRequested)
+                    ProgressChanged?.Invoke(this, new DownloadProgressModel
                     {
-                        ProgressChanged?.Invoke(this, new DownloadProgressModel
-                        {
-                            ProgressKey = progressKey,
-                            Filename = Path.GetFileName(destPath),
-                            BytesDownloaded = currentDownloaded,
-                            TotalBytes = totalSize,
-                            SpeedBytesPerSecond = speed
-                        });
-                    }
+                        ProgressKey = progressKey,
+                        Filename = Path.GetFileName(destPath),
+                        BytesDownloaded = currentDownloaded,
+                        TotalBytes = totalSize,
+                        SpeedBytesPerSecond = speed
+                    });
                 }
             }
         });
 
-        await Task.WhenAll(tasks);
-        FinalizeDownload(tempPath, destPath);
+        try
+        {
+            await Task.WhenAll(tasks);
+            FinalizeDownload(tempPath, destPath);
+        }
+        catch
+        {
+            CleanupFiles(new[] { tempPath });
+            throw;
+        }
     }
 
     private async Task DownloadSingleAsync(string url, string destPath, string progressKey, long totalSize = 0, CancellationToken cancellationToken = default)
@@ -188,26 +192,25 @@ public class Downloader
         long lastUpdateTicks = 0;
         DateTime startTime = DateTime.UtcNow;
 
-        using var stream = await res.Content.ReadAsStreamAsync(cancellationToken);
-        using var fileStream = new FileStream(tempPath, FileMode.OpenOrCreate, FileAccess.Write, FileShare.None, 8192, useAsync: true);
-
-        byte[] buffer = new byte[65536];
-        int read;
-        while ((read = await stream.ReadAsync(buffer, 0, buffer.Length, cancellationToken)) > 0)
+        try
         {
-            if (cancellationToken.IsCancellationRequested) break;
-            await fileStream.WriteAsync(buffer, 0, read, cancellationToken);
-            bytesDownloaded += read;
+            using var stream = await res.Content.ReadAsStreamAsync(cancellationToken);
+            using var fileStream = new FileStream(tempPath, FileMode.OpenOrCreate, FileAccess.Write, FileShare.None, 8192, useAsync: true);
 
-            long currentTicks = DateTime.UtcNow.Ticks;
-            if (currentTicks - lastUpdateTicks > UpdateIntervalTicks || bytesDownloaded == totalSize)
+            byte[] buffer = new byte[65536];
+            int read;
+            while ((read = await stream.ReadAsync(buffer, 0, buffer.Length, cancellationToken)) > 0)
             {
-                lastUpdateTicks = currentTicks;
-                var elapsed = (DateTime.UtcNow - startTime).TotalSeconds;
-                double speed = elapsed > 0 ? bytesDownloaded / elapsed : 0;
+                await fileStream.WriteAsync(buffer, 0, read, cancellationToken);
+                bytesDownloaded += read;
 
-                if (!cancellationToken.IsCancellationRequested)
+                long currentTicks = DateTime.UtcNow.Ticks;
+                if (currentTicks - lastUpdateTicks > UpdateIntervalTicks || bytesDownloaded == totalSize)
                 {
+                    lastUpdateTicks = currentTicks;
+                    var elapsed = (DateTime.UtcNow - startTime).TotalSeconds;
+                    double speed = elapsed > 0 ? bytesDownloaded / elapsed : 0;
+
                     ProgressChanged?.Invoke(this, new DownloadProgressModel
                     {
                         ProgressKey = progressKey,
@@ -218,10 +221,15 @@ public class Downloader
                     });
                 }
             }
-        }
 
-        fileStream.Close();
-        FinalizeDownload(tempPath, destPath);
+            fileStream.Close();
+            FinalizeDownload(tempPath, destPath);
+        }
+        catch
+        {
+            CleanupFiles(new[] { tempPath });
+            throw;
+        }
     }
 
     private string CreateTempFile(string destPath, long totalSize)

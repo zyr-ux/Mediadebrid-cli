@@ -20,6 +20,7 @@ public class TuiApp
     public TuiApp()
     {
         _downloader = new Downloader();
+        _downloader.ProgressChanged += OnDownloadProgressChanged;
         _metadataResolver = new MetadataResolver();
 
         _progressTasks = new ConcurrentDictionary<string, ProgressTask>();
@@ -40,7 +41,6 @@ public class TuiApp
         }
 
         _progressTasks.Clear();
-        _downloader.ProgressChanged += OnDownloadProgressChanged;
 
         try
         {
@@ -174,6 +174,7 @@ public class TuiApp
         AnsiConsole.MarkupLine("\n[bold]Starting Downloads...[/]");
 
         var activePaths = new ConcurrentBag<string>();
+        Task? downloadLoopTask = null;
         try
         {
             await AnsiConsole.Progress()
@@ -187,18 +188,19 @@ public class TuiApp
                     new EtaTimeColumn())
                 .StartAsync(async ctx =>
                 {
-                    var downloadLoopTask = Task.Run(async () =>
+                    downloadLoopTask = Task.Run(async () =>
                     {
                         foreach (var link in info.Links)
                         {
-                            cancellationToken.ThrowIfCancellationRequested();
+                            if (cancellationToken.IsCancellationRequested) break;
+
                             ProgressTask? progressTask = null;
                             try
                             {
                                 var unrestricted = await GetClient().UnrestrictLinkAsync(link, cancellationToken: cancellationToken);
                                 var filename = unrestricted.Filename;
                                 var destPath = PathGenerator.GetDestinationPath(resolved.Type, resolved.Title, resolved.Year, filename, resolved.Season);
-                                
+
                                 // Skip if file already exists or episode already exists
                                 if (File.Exists(destPath))
                                 {
@@ -238,7 +240,7 @@ public class TuiApp
                             catch (OperationCanceledException)
                             {
                                 progressTask?.StopTask();
-                                throw;
+                                break;
                             }
                             catch (Exception ex)
                             {
@@ -248,14 +250,10 @@ public class TuiApp
                         }
                     }, cancellationToken);
 
-                    // Polling loop to ensure immediate UI exit on cancellation
                     while (!downloadLoopTask.IsCompleted)
                     {
-                        if (cancellationToken.IsCancellationRequested)
-                        {
-                            throw new OperationCanceledException(cancellationToken);
-                        }
-                        await Task.Delay(100, cancellationToken);
+                        if (cancellationToken.IsCancellationRequested) throw new OperationCanceledException(cancellationToken);
+                        await Task.Delay(200, cancellationToken);
                     }
 
                     await downloadLoopTask;
@@ -268,21 +266,20 @@ public class TuiApp
         }
         catch (OperationCanceledException ex)
         {
-            _downloader.ProgressChanged -= OnDownloadProgressChanged;
             var tex = ex as TerminationException ?? new TerminationException("\n[red]Termination requested. Cleaning up...[/]");
             tex.Print();
-            // Run cleanup in background to avoid blocking the exit UI
-            _ = Task.Run(() => Downloader.CleanupFiles(activePaths), CancellationToken.None);
+            
+            if (downloadLoopTask != null)
+            {
+                try { await downloadLoopTask; } catch { }
+            }
+
+            Downloader.CleanupFiles(activePaths);
             throw tex;
         }
         catch (Exception ex)
         {
-            _downloader.ProgressChanged -= OnDownloadProgressChanged;
             AnsiConsole.MarkupLine($"\n[red]Critical error during download process:[/] {ex.Message}");
-        }
-        finally
-        {
-            _downloader.ProgressChanged -= OnDownloadProgressChanged;
         }
     }
 
