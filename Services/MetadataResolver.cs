@@ -10,19 +10,20 @@ public class MetadataResolver
 
     public MetadataResolver()
     {
-        if (!string.IsNullOrWhiteSpace(Settings.TmdbReadAccessToken))
+        if (!string.IsNullOrWhiteSpace(Settings.TmdbReadAccessToken) && Settings.TmdbReadAccessToken != "your_tmdb_bearer_token_here")
         {
             _tmdb = new TMDbClient(Settings.TmdbReadAccessToken);
         }
     }
 
-    public async Task<TMDBModels> ResolveAsync(string name, string? mediaTypeHint = null, CancellationToken cancellationToken = default)
+    public async Task<MediaMetadata> ResolveAsync(string name, string? mediaTypeHint = null, CancellationToken cancellationToken = default)
     {
         var parsed = ParseName(name);
 
-        string mediaType = mediaTypeHint ?? "movie";
-        if (string.IsNullOrEmpty(mediaTypeHint))
+        string mediaType = mediaTypeHint ?? parsed.Type;
+        if (string.IsNullOrEmpty(mediaTypeHint) && mediaType == "movie")
         {
+            // double check for show indicators if not explicitly set
             if (parsed.Season.HasValue || parsed.Episode.HasValue
                 || name.Contains("S0", StringComparison.OrdinalIgnoreCase)
                 || name.Contains("Season", StringComparison.OrdinalIgnoreCase))
@@ -32,7 +33,8 @@ public class MetadataResolver
         }
 
         var client = _tmdb;
-        if (client == null || Settings.TmdbReadAccessToken == "your_tmdb_bearer_token_here")
+        // Skip TMDB if explicitly "other" or if no token
+        if (client == null || mediaType == "other")
         {
             parsed.Type = mediaType;
             return parsed;
@@ -50,7 +52,7 @@ public class MetadataResolver
                     parsed.Year = best.ReleaseDate?.Year.ToString() ?? parsed.Year;
                 }
             }
-            else
+            else if (mediaType == "show")
             {
                 var results = await client.SearchTvShowAsync(parsed.Title, cancellationToken: cancellationToken);
                 if (results?.Results != null && results.Results.Count > 0)
@@ -70,50 +72,73 @@ public class MetadataResolver
         return parsed;
     }
 
-    private TMDBModels ParseName(string name)
+    public MediaMetadata ParseName(string name)
     {
-        var result = new TMDBModels();
+        var result = new MediaMetadata();
         string titlePart = name;
 
-        // 1. Try S01E01 pattern
-        var seMatch = Regex.Match(name, @"S(?<season>\d{1,2})E(?<episode>\d{1,2})", RegexOptions.IgnoreCase);
+        // 1. Detect Non-Media (Software, ISO, etc.)
+        if (Regex.IsMatch(name, @"(?i)\b(windows|office|adobe|autocad|crack|keygen|activator|patch|setup|installer|x64|x86|multilingual|portable)\b") ||
+            Regex.IsMatch(name, @"(?i)\.(exe|msi|iso|zip|rar|7z|dmg|pkg)$"))
+        {
+            result.Type = "other";
+        }
+
+        // 2. Extract Season/Episode
+        // Patterns: S01E01, S01.E01, Season 1, 1x01
+        var seMatch = Regex.Match(name, @"(?i)S(?<season>\d{1,2})[E\.]?(?<episode>\d{1,2})|Season\s*(?<season2>\d{1,2})|(?<season3>\d{1,2})x(?<episode2>\d{1,2})");
         if (seMatch.Success)
         {
-            result.Season = int.Parse(seMatch.Groups["season"].Value);
-            result.Episode = int.Parse(seMatch.Groups["episode"].Value);
-            titlePart = seMatch.Index > 2 ? name[..seMatch.Index] : name[(seMatch.Index + seMatch.Length)..];
+            result.Type = "show";
+            var sStr = seMatch.Groups["season"].Value ?? seMatch.Groups["season2"].Value ?? seMatch.Groups["season3"].Value;
+            var eStr = seMatch.Groups["episode"].Value ?? seMatch.Groups["episode2"].Value;
+
+            if (int.TryParse(sStr, out int s)) result.Season = s;
+            if (int.TryParse(eStr, out int e)) result.Episode = e;
+            
+            titlePart = name[..seMatch.Index];
         }
         else
         {
-            // 2. Try Year pattern
+            // 3. Extract Year
             var yearMatch = Regex.Match(name, @"\b(?<year>19\d{2}|20\d{2})\b");
             if (yearMatch.Success)
             {
                 result.Year = yearMatch.Groups["year"].Value;
-                titlePart = yearMatch.Index > 2 ? name[..yearMatch.Index] : name[(yearMatch.Index + yearMatch.Length)..];
-            }
-            else
-            {
-                // 3. Try Resolution pattern
-                var resMatch = Regex.Match(name, @"(?i)(1080p|720p|2160p|4k|blu-ray)");
-                if (resMatch.Success)
-                {
-                    titlePart = resMatch.Index > 2 ? name[..resMatch.Index] : name[(resMatch.Index + resMatch.Length)..];
-                }
+                if (string.IsNullOrEmpty(result.Type)) result.Type = "movie";
+                titlePart = name[..yearMatch.Index];
             }
         }
 
-        // Clean up title
-        string cleanedTitle = titlePart.Replace(".", " ").Replace("_", " ").Replace("(", "").Replace(")", "").Trim();
+        // 4. Extract Resolution
+        var resMatch = Regex.Match(name, @"(?i)\b(2160p|1080p|720p|480p|4k|uhd|hd)\b");
+        if (resMatch.Success)
+        {
+            result.Resolution = resMatch.Groups[1].Value.ToLowerInvariant();
+            if (titlePart.Length > resMatch.Index) titlePart = titlePart[..resMatch.Index];
+        }
+
+        // 5. Extract Quality/Codec
+        var qualityMatch = Regex.Match(name, @"(?i)\b(bluray|brrip|bdrip|web-dl|webrip|hdtv|h264|x264|h265|x265|hevc|avc)\b");
+        if (qualityMatch.Success)
+        {
+            result.Quality = qualityMatch.Groups[1].Value.ToLowerInvariant();
+        }
+
+        // 6. Clean Title
+        // Remove periods, underscores, brackets, etc.
+        string cleanedTitle = titlePart.Replace(".", " ").Replace("_", " ").Replace("(", "").Replace(")", "").Replace("[", "").Replace("]", "").Trim();
         cleanedTitle = Regex.Replace(cleanedTitle, @"\s+", " ").Trim('-', ' ');
 
         // Fallback if title is empty or too short
         if (string.IsNullOrWhiteSpace(cleanedTitle) || cleanedTitle.Length < 2)
         {
-            cleanedTitle = name.Replace(".", " ").Replace("_", " ").Trim();
+            cleanedTitle = name.Split(new[] { '.', '_', ' ' }, StringSplitOptions.RemoveEmptyEntries)[0];
         }
 
         result.Title = cleanedTitle;
+        if (string.IsNullOrEmpty(result.Type)) result.Type = "movie"; // Default to movie if not software or show
+
         return result;
     }
 }

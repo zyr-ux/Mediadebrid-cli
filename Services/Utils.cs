@@ -10,7 +10,7 @@ namespace MediaDebrid_cli.Services;
 
 public static class Utils
 {
-    public static void ApplyMetadataOverrides(TMDBModels meta, string? typeOverride, string? titleOverride, string? yearOverride, int? seasonOverride, int? episodeOverride)
+    public static void ApplyMetadataOverrides(MediaMetadata meta, string? typeOverride, string? titleOverride, string? yearOverride, int? seasonOverride, int? episodeOverride)
     {
         if (!string.IsNullOrWhiteSpace(titleOverride)) meta.Title = titleOverride.Trim();
         if (!string.IsNullOrWhiteSpace(typeOverride)) meta.Type = typeOverride.Trim().ToLowerInvariant();

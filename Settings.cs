@@ -77,7 +77,6 @@ public static class Settings
 
     public static bool IsConfigured()
     {
-        return !string.IsNullOrWhiteSpace(Instance.RealDebridApiToken) && 
-               !string.IsNullOrWhiteSpace(Instance.TmdbReadAccessToken);
+        return !string.IsNullOrWhiteSpace(Instance.RealDebridApiToken);
     }
 }

@@ -53,7 +53,7 @@ public class TuiApp
 
         var torrentId = string.Empty;
         TorrentInfo? info = null;
-        TMDBModels? resolved = null;
+        MediaMetadata? resolved = null;
         HashSet<int>? existingEpisodes = null;
 
         if (MagnetParser.ExtractHash(magnet) == null)
@@ -68,7 +68,7 @@ public class TuiApp
                 ctx.Spinner(Spinner.Known.Dots);
                 ctx.SpinnerStyle(Style.Parse("green"));
 
-                void ApplyOverrides(TMDBModels meta) => Utils.ApplyMetadataOverrides(meta, typeOverride, titleOverride, yearOverride, seasonOverride, episodeOverride);
+                void ApplyOverrides(MediaMetadata meta) => Utils.ApplyMetadataOverrides(meta, typeOverride, titleOverride, yearOverride, seasonOverride, episodeOverride);
 
                 try
                 {
@@ -362,13 +362,15 @@ public class TuiApp
 
             if (string.IsNullOrWhiteSpace(Settings.Instance.TmdbReadAccessToken))
             {
-                Settings.Instance.TmdbReadAccessToken = await CancellablePromptAsync(
-                    new TextPrompt<string>("Enter [green]TMDB Read Access Token[/]:")
+                var response = await CancellablePromptAsync(
+                    new TextPrompt<string>("Enter [green]TMDB Read Access Token[/] (Optional, press Enter to skip):")
+                        .AllowEmpty()
                         .PromptStyle("white")
-                        .Secret()
-                        .Validate(k => string.IsNullOrWhiteSpace(k) ? ValidationResult.Error("[red]Token cannot be empty.[/]") : ValidationResult.Success()),
+                        .Secret(),
                     cancellationToken
                 );
+                
+                Settings.Instance.TmdbReadAccessToken = string.IsNullOrWhiteSpace(response) ? "" : response;
             }
 
             if (Settings.Instance.MediaRoot == "./media" || string.IsNullOrWhiteSpace(Settings.Instance.MediaRoot))
@@ -443,7 +445,7 @@ public class TuiApp
         return await tcs.Task;
     }
 
-    private static void RenderMetadataPanel(TMDBModels meta, string sourceLabel)
+    private static void RenderMetadataPanel(MediaMetadata meta, string sourceLabel)
     {
         var panel = new Panel(new Grid()
             .AddColumn()
