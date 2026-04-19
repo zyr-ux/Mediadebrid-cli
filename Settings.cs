@@ -31,9 +31,6 @@ public static class Settings
 
     public static bool ParallelDownloadEnabled => Instance.ParallelDownloadEnabled;
     public static int ConnectionsPerFile => Instance.ConnectionsPerFile;
-    public static string TmdbReadAccessToken => Instance.TmdbReadAccessToken;
-    public static int TmdbCacheTtlSeconds => Instance.TmdbCacheTtlSeconds;
-    public static string RawgApiKey => Instance.RawgApiKey;
 
     public static void Load()
     {
@@ -66,15 +63,8 @@ public static class Settings
         if (int.TryParse(Environment.GetEnvironmentVariable("CONNECTIONS_PER_FILE"), out int cpf))
             Instance.ConnectionsPerFile = cpf;
 
-        Instance.TmdbReadAccessToken = Environment.GetEnvironmentVariable("TMDB_READ_ACCESS_TOKEN") ?? "";
-
-        if (int.TryParse(Environment.GetEnvironmentVariable("TMDB_CACHE_TTL_SECONDS"), out int ttl))
-            Instance.TmdbCacheTtlSeconds = ttl;
-
         if (bool.TryParse(Environment.GetEnvironmentVariable("SKIP_EXISTING_EPISODES"), out bool skip))
             Instance.SkipExistingEpisodes = skip;
-
-        Instance.RawgApiKey = Environment.GetEnvironmentVariable("RAWG_API_KEY") ?? Instance.RawgApiKey;
 
         // Save immediately if we loaded from legacy methods so next time it uses json
         Save();

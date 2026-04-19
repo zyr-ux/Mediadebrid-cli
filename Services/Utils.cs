@@ -137,6 +137,7 @@ public static class Utils
         var metadata = GetConfigurationMetadata();
         foreach (var (key, type, desc) in metadata)
         {
+            if (key.Contains("tmdb", StringComparison.OrdinalIgnoreCase) || key.Contains("rawg", StringComparison.OrdinalIgnoreCase)) continue;
             sb.AppendLine($"  {key,-30} - {desc}");
         }
 

@@ -362,32 +362,6 @@ public class TuiApp
                 );
             }
 
-            if (string.IsNullOrWhiteSpace(Settings.Instance.TmdbReadAccessToken))
-            {
-                var response = await CancellablePromptAsync(
-                    new TextPrompt<string>("Enter [green]TMDB Read Access Token[/] (Optional, press Enter to skip):")
-                        .AllowEmpty()
-                        .PromptStyle("white")
-                        .Secret(),
-                    cancellationToken
-                );
-                
-                Settings.Instance.TmdbReadAccessToken = string.IsNullOrWhiteSpace(response) ? "" : response;
-            }
-
-            if (string.IsNullOrWhiteSpace(Settings.Instance.RawgApiKey))
-            {
-                var response = await CancellablePromptAsync(
-                    new TextPrompt<string>("Enter [green]RAWG API Key[/] (Optional, press Enter to skip):")
-                        .AllowEmpty()
-                        .PromptStyle("white")
-                        .Secret(),
-                    cancellationToken
-                );
-                
-                Settings.Instance.RawgApiKey = string.IsNullOrWhiteSpace(response) ? "" : response;
-            }
-
             if (string.IsNullOrWhiteSpace(Settings.Instance.MediaRoot))
             {
                 var defaultPath = Settings.DefaultBaseRoot;
