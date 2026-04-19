@@ -20,7 +20,6 @@ public class TuiApp
     public TuiApp()
     {
         _downloader = new Downloader();
-        _downloader.ProgressChanged += OnDownloadProgressChanged;
         _metadataResolver = new MetadataResolver();
 
         _progressTasks = new ConcurrentDictionary<string, ProgressTask>();
@@ -41,6 +40,7 @@ public class TuiApp
         }
 
         _progressTasks.Clear();
+        _downloader.ProgressChanged += OnDownloadProgressChanged;
 
         try
         {
@@ -187,62 +187,78 @@ public class TuiApp
                     new EtaTimeColumn())
                 .StartAsync(async ctx =>
                 {
-                    foreach (var link in info.Links)
+                    var downloadLoopTask = Task.Run(async () =>
                     {
-                        ProgressTask? progressTask = null;
-                        try
+                        foreach (var link in info.Links)
                         {
-                            var unrestricted = await GetClient().UnrestrictLinkAsync(link, cancellationToken: cancellationToken);
-                            var filename = unrestricted.Filename;
-                            var destPath = PathGenerator.GetDestinationPath(resolved.Type, resolved.Title, resolved.Year, filename, resolved.Season);
-                            
-                            // Skip if file already exists or episode already exists
-                            if (File.Exists(destPath))
+                            cancellationToken.ThrowIfCancellationRequested();
+                            ProgressTask? progressTask = null;
+                            try
                             {
-                                var skipTask = ctx.AddTask($"[yellow]SKIPPED:[/] [cyan]{filename}[/] (Already exists locally)", new ProgressTaskSettings { AutoStart = false });
-                                skipTask.Increment(100);
-                                skipTask.StopTask();
-                                continue;
-                            }
-
-                            if (resolved.Type == "show" && Settings.Instance.SkipExistingEpisodes)
-                            {
-                                var ep = Utils.ExtractEpisodeNumber(filename);
-                                if (ep.HasValue && existingEpisodes != null && existingEpisodes.Contains(ep.Value))
+                                var unrestricted = await GetClient().UnrestrictLinkAsync(link, cancellationToken: cancellationToken);
+                                var filename = unrestricted.Filename;
+                                var destPath = PathGenerator.GetDestinationPath(resolved.Type, resolved.Title, resolved.Year, filename, resolved.Season);
+                                
+                                // Skip if file already exists or episode already exists
+                                if (File.Exists(destPath))
                                 {
-                                    var skipTask = ctx.AddTask($"[yellow]SKIPPED:[/] [cyan]{filename}[/] (Episode {ep.Value} already exists)", new ProgressTaskSettings { AutoStart = false });
+                                    var skipTask = ctx.AddTask($"[yellow]SKIPPED:[/] [cyan]{filename}[/] (Already exists locally)", new ProgressTaskSettings { AutoStart = false });
                                     skipTask.Increment(100);
                                     skipTask.StopTask();
                                     continue;
                                 }
+
+                                if (resolved.Type == "show" && Settings.Instance.SkipExistingEpisodes)
+                                {
+                                    var ep = Utils.ExtractEpisodeNumber(filename);
+                                    if (ep.HasValue && existingEpisodes != null && existingEpisodes.Contains(ep.Value))
+                                    {
+                                        var skipTask = ctx.AddTask($"[yellow]SKIPPED:[/] [cyan]{filename}[/] (Episode {ep.Value} already exists)", new ProgressTaskSettings { AutoStart = false });
+                                        skipTask.Increment(100);
+                                        skipTask.StopTask();
+                                        continue;
+                                    }
+                                }
+
+                                var progressKey = destPath;
+                                var tempPath = destPath + ".mdebrid";
+                                activePaths.Add(tempPath);
+
+                                var displayFilename = filename.Length > 40 ? filename[..37] + "..." : filename;
+
+                                progressTask = ctx.AddTask($"[cyan]{displayFilename}[/]", new ProgressTaskSettings { AutoStart = false });
+                                _progressTasks[progressKey] = progressTask;
+                                progressTask.StartTask();
+
+                                await _downloader.DownloadFileAsync(unrestricted.Download, destPath, progressKey, cancellationToken);
+
+                                progressTask.Value = progressTask.MaxValue;
+                                progressTask.StopTask();
                             }
-
-                            var progressKey = destPath;
-                            var tempPath = destPath + ".mdebrid";
-                            activePaths.Add(tempPath);
-
-                            var displayFilename = filename.Length > 40 ? filename[..37] + "..." : filename;
-
-                            progressTask = ctx.AddTask($"[cyan]{displayFilename}[/]", new ProgressTaskSettings { AutoStart = false });
-                            _progressTasks[progressKey] = progressTask;
-                            progressTask.StartTask();
-
-                            await _downloader.DownloadFileAsync(unrestricted.Download, destPath, progressKey, cancellationToken);
-
-                            progressTask.Value = progressTask.MaxValue;
-                            progressTask.StopTask();
+                            catch (OperationCanceledException)
+                            {
+                                progressTask?.StopTask();
+                                throw;
+                            }
+                            catch (Exception ex)
+                            {
+                                progressTask?.StopTask();
+                                throw new TerminationException($"[red]Download failed:[/] {ex.Message}");
+                            }
                         }
-                        catch (OperationCanceledException)
+                    }, cancellationToken);
+
+                    // Polling loop to ensure immediate UI exit on cancellation
+                    while (!downloadLoopTask.IsCompleted)
+                    {
+                        if (cancellationToken.IsCancellationRequested)
                         {
-                            progressTask?.StopTask();
-                            throw;
+                            throw new OperationCanceledException(cancellationToken);
                         }
-                        catch (Exception ex)
-                        {
-                            progressTask?.StopTask();
-                            throw new TerminationException($"[red]Download failed:[/] {ex.Message}");
-                        }
+                        await Task.Delay(100, cancellationToken);
                     }
+
+                    await downloadLoopTask;
                 });
 
             if (!cancellationToken.IsCancellationRequested)
@@ -252,14 +268,21 @@ public class TuiApp
         }
         catch (OperationCanceledException ex)
         {
+            _downloader.ProgressChanged -= OnDownloadProgressChanged;
             var tex = ex as TerminationException ?? new TerminationException("\n[red]Termination requested. Cleaning up...[/]");
             tex.Print();
-            Downloader.CleanupFiles(activePaths);
+            // Run cleanup in background to avoid blocking the exit UI
+            _ = Task.Run(() => Downloader.CleanupFiles(activePaths), CancellationToken.None);
             throw tex;
         }
         catch (Exception ex)
         {
+            _downloader.ProgressChanged -= OnDownloadProgressChanged;
             AnsiConsole.MarkupLine($"\n[red]Critical error during download process:[/] {ex.Message}");
+        }
+        finally
+        {
+            _downloader.ProgressChanged -= OnDownloadProgressChanged;
         }
     }
 
