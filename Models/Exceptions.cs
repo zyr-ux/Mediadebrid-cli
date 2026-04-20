@@ -53,8 +53,8 @@ public class RealDebridApiException : HttpRequestException, IPrintableException
     public void Print()
     {
         string msg = ErrorCode == 35 
-            ? "\n[red]✗[/] Real-Debrid has blocked this magnet as an infringing file (Code 35)."
-            : $"\n[red]✗[/] Real-Debrid API Error: [white]{Markup.Escape(Error)}[/] (Code: {ErrorCode})";
+            ? "\n[bold red]✗[/] Real-Debrid has blocked this magnet as an infringing file (Code 35)."
+            : $"\n[bold red]✗[/] Real-Debrid API Error: [white]{Markup.Escape(Error)}[/] (Code: {ErrorCode})";
         AnsiConsole.MarkupLine(msg);
     }
 }
@@ -65,7 +65,7 @@ public class ConfigurationException : Exception, IPrintableException
 
     public void Print()
     {
-        AnsiConsole.MarkupLine($"\n[red]✗[/] Configuration Error: [white]{Markup.Escape(Message)}[/]");
+        AnsiConsole.MarkupLine($"\n[bold red]✗[/] Configuration Error: [white]{Markup.Escape(Message)}[/]");
     }
 }
 
@@ -75,7 +75,7 @@ public class MagnetException : Exception, IPrintableException
 
     public void Print()
     {
-        AnsiConsole.MarkupLine($"\n[red]✗[/] Magnet Error: [white]{Markup.Escape(Message)}[/]");
+        AnsiConsole.MarkupLine($"\n[bold red]✗[/] Magnet Error: [white]{Markup.Escape(Message)}[/]");
     }
 }
 
@@ -86,7 +86,7 @@ public class DownloadException : Exception, IPrintableException
 
     public void Print()
     {
-        AnsiConsole.MarkupLine($"\n[red]✗[/] Download Error: [white]{Markup.Escape(Message)}[/]");
+        AnsiConsole.MarkupLine($"\n[bold red]✗[/] Download Error: [white]{Markup.Escape(Message)}[/]");
     }
 }
 
@@ -97,6 +97,6 @@ public class RealDebridClientException : Exception, IPrintableException
 
     public void Print()
     {
-        AnsiConsole.MarkupLine($"\n[red]✗[/] Client Error: [white]{Markup.Escape(Message)}[/]");
+        AnsiConsole.MarkupLine($"\n[bold red]✗[/] Client Error: [white]{Markup.Escape(Message)}[/]");
     }
 }

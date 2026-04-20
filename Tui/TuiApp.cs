@@ -17,6 +17,12 @@ public class TuiApp
 
     private readonly ConcurrentDictionary<string, ProgressTask> _progressTasks;
     private readonly ConcurrentDictionary<int, double> _taskSpeeds; // Use task.Id as key
+    private readonly ConcurrentDictionary<int, TaskDisplayStatus> _taskDisplayStatuses;
+    private readonly ConcurrentDictionary<int, int> _frozenFrames;
+
+    private static readonly Spinner AppSpinner = Spinner.Known.Arc;
+
+    private enum TaskDisplayStatus { Active, Finished, Saved, Cancelled }
 
     public TuiApp()
     {
@@ -27,6 +33,8 @@ public class TuiApp
 
         _progressTasks = new ConcurrentDictionary<string, ProgressTask>();
         _taskSpeeds = new ConcurrentDictionary<int, double>();
+        _taskDisplayStatuses = new ConcurrentDictionary<int, TaskDisplayStatus>();
+        _frozenFrames = new ConcurrentDictionary<int, int>();
     }
 
     private RealDebridClient GetClient() => _client ??= new RealDebridClient();
@@ -75,7 +83,7 @@ public class TuiApp
             await AnsiConsole.Status()
                 .StartAsync("Checking Real-Debrid cache...", async ctx =>
                 {
-                    ctx.Spinner(Spinner.Known.Dots);
+                    ctx.Spinner(Spinner.Known.Arc);
                     ctx.SpinnerStyle(Style.Parse("yellow"));
 
                     matched = await GetClient().FindTorrentByHashAsync(hash, cancellationToken);
@@ -104,7 +112,7 @@ public class TuiApp
         catch (RealDebridApiException) { throw; }
         catch (HttpRequestException ex)
         {
-            throw new TerminationException($"\n[red]✗[/] Network error during cache check: [white]{Markup.Escape(ex.Message)}[/]");
+            throw new TerminationException($"\n[bold red]✗[/] Network error during cache check: [white]{Markup.Escape(ex.Message)}[/]");
         }
 
         if (!isCached)
@@ -113,7 +121,7 @@ public class TuiApp
                 ? $"is currently [bold red]{matched.Status}[/]" 
                 : "is [bold red]Not Cached[/]";
             
-            AnsiConsole.MarkupLine($"[red]✗[/] This magnet {statusMsg} on Real-Debrid servers.");
+            AnsiConsole.MarkupLine($"[bold red]✗[/] This magnet {statusMsg} on Real-Debrid servers.");
             
             if (!AnsiConsole.Confirm("Do you want Real-Debrid to cache it for you?"))
             {
@@ -129,18 +137,18 @@ public class TuiApp
         }
         else if (matched != null && !newlyAdded)
         {
-            AnsiConsole.MarkupLine($"[green]✓[/] Found existing torrent. (Status: [cyan]Cached[/])");
+            AnsiConsole.MarkupLine($"[bold green]✓[/] Found existing torrent. (Status: [cyan]Cached[/])");
         }
         else if (newlyAdded)
         {
-            AnsiConsole.MarkupLine($"[green]✓[/] Magnet added to Real-Debrid. (Status: [cyan]Cached[/])");
+            AnsiConsole.MarkupLine($"[bold green]✓[/] Magnet added to Real-Debrid. (Status: [cyan]Cached[/])");
         }
 
         AnsiConsole.WriteLine();
         await AnsiConsole.Status()
             .StartAsync("Initializing...", async ctx =>
             {
-                ctx.Spinner(Spinner.Known.Dots);
+                ctx.Spinner(Spinner.Known.Arc);
                 ctx.SpinnerStyle(Style.Parse("green"));
 
                 void ApplyOverrides(MediaMetadata meta) => Utils.ApplyMetadataOverrides(meta, typeOverride, titleOverride, yearOverride, seasonOverride, episodeOverride);
@@ -162,7 +170,7 @@ public class TuiApp
                         ctx.Status("[yellow]Submitting magnet to Real-Debrid...[/]");
                         var addRes = await GetClient().AddMagnetAsync(magnet, cancellationToken: cancellationToken);
                         torrentId = addRes.Id;
-                        AnsiConsole.MarkupLine($"[green]✓[/] Magnet submitted. RD ID: [cyan]{torrentId}[/]");
+                        AnsiConsole.MarkupLine($"[bold green]✓[/] Magnet submitted. RD ID: [cyan]{torrentId}[/]");
                     }
 
                     ctx.Status("[yellow]Fetching torrent info...[/]");
@@ -182,7 +190,7 @@ public class TuiApp
 
                     if (info.Status == "dead")
                     {
-                        throw new TerminationException("[red]✗[/] Torrent is dead.");
+                        throw new TerminationException("[bold red]✗[/] Torrent is dead.");
                     }
 
                     if (resolved.Type == "show" && Settings.Instance.SkipExistingEpisodes)
@@ -194,7 +202,7 @@ public class TuiApp
                         {
                             if (episodeOverride.HasValue && existingEpisodes.Contains(episodeOverride.Value))
                             {
-                                throw new TerminationException($"[red]Episode {episodeOverride.Value} already exists in your local library.[/]");
+                                throw new TerminationException($"[bold red]Episode {episodeOverride.Value} already exists in your local library.[/]");
                             }
 
                             AnsiConsole.MarkupLine($"[yellow]⚠[/] Found [cyan]{existingEpisodes.Count}[/] existing episodes in local library. They will be skipped.");
@@ -209,16 +217,16 @@ public class TuiApp
                         
                         if (!fileIds.Any())
                         {
-                            throw new TerminationException("[red]✗[/] No files found to download.");
+                            throw new TerminationException("[bold red]✗[/] No files found to download.");
                         }
 
                         if (episodeOverride.HasValue && !info.Files.Any(f => Utils.IsEpisodeMatch(f.Path, episodeOverride.Value)))
                         {
-                            AnsiConsole.MarkupLine($"[red]✗[/] No files found matching episode [cyan]{episodeOverride.Value}[/]. Falling back to largest files.");
+                            AnsiConsole.MarkupLine($"[bold red]✗[/] No files found matching episode [cyan]{episodeOverride.Value}[/]. Falling back to largest files.");
                         }
 
                         await GetClient().SelectFilesAsync(torrentId, string.Join(",", fileIds), cancellationToken: cancellationToken);
-                        AnsiConsole.MarkupLine("[green]✓[/] Selected relevant files.");
+                        AnsiConsole.MarkupLine("[bold green]✓[/] Selected relevant files.");
                     }
                 }
                 catch (TerminationException) { throw; }
@@ -240,7 +248,7 @@ public class TuiApp
         info = await GetClient().GetTorrentInfoAsync(torrentId, cancellationToken);
         if (info.Status != "downloaded")
         {
-            AnsiConsole.MarkupLine("[red]✗[/] Magnet is [bold red]not cached[/] on Real-Debrid servers.");
+            AnsiConsole.MarkupLine("[bold red]✗[/] Magnet is [bold red]not cached[/] on Real-Debrid servers.");
             if (!AnsiConsole.Confirm("Do you want to wait for Real-Debrid to cache it?"))
             {
                 await AnsiConsole.Status().StartAsync("[red]Removing magnet...[/]", async ctx => 
@@ -256,13 +264,13 @@ public class TuiApp
             await AnsiConsole.Status()
                 .StartAsync("Waiting for Real-Debrid to cache files...", async ctx =>
                 {
-                    ctx.Spinner(Spinner.Known.Dots);
+                    ctx.Spinner(Spinner.Known.Arc);
                     ctx.SpinnerStyle(Style.Parse("yellow"));
                     info = await GetClient().WaitForStatusAsync(torrentId, ["downloaded"], cancellationToken, pollDelayMs: 5000);
                 });
         }
 
-        AnsiConsole.MarkupLine("[green]✓[/] Files are ready and cached!");
+        AnsiConsole.MarkupLine("[bold green]✓[/] Files are ready and cached!");
 
         AnsiConsole.MarkupLine("\n[bold]Starting Downloads...[/]");
         AnsiConsole.MarkupLine("[dim]Controls: [yellow]P[/] Pause | [green]X[/] Save & Exit | [red]Ctrl+C[/] Cancel & Delete\n[/]");
@@ -276,6 +284,7 @@ public class TuiApp
 
         await AnsiConsole.Status().StartAsync("[yellow]Preparing downloads...[/]", async ctx =>
         {
+            ctx.Spinner(Spinner.Known.Arc);
             foreach (var link in info.Links)
             {
                 if (linkedCts.Token.IsCancellationRequested) break;
@@ -327,6 +336,7 @@ public class TuiApp
             await AnsiConsole.Progress()
                 .AutoClear(false)
                 .Columns(
+                    new SpinnerColumn(this, _downloader),
                     new TaskDescriptionColumn(),
                     new ProgressBarColumn { Width = 200 },
                     new PercentageColumn(),
@@ -424,6 +434,8 @@ public class TuiApp
 
                     while (!downloadLoopTask.IsCompleted)
                     {
+                        ctx.Refresh();
+
                         if (linkedCts.Token.IsCancellationRequested) break;
                         
                         if (Console.KeyAvailable)
@@ -436,6 +448,16 @@ public class TuiApp
                             else if (key.Key == ConsoleKey.X)
                             {
                                 shouldDeletePartial = false;
+                                var now = Environment.TickCount64;
+                                var interval = (long)AppSpinner.Interval.TotalMilliseconds;
+                                var count = AppSpinner.Frames.Count;
+                                var frameIdx = (int)((now / interval) % count);
+
+                                foreach (var t in _progressTasks.Values)
+                                {
+                                    _taskDisplayStatuses[t.Id] = TaskDisplayStatus.Saved;
+                                    _frozenFrames[t.Id] = frameIdx;
+                                }
                                 linkedCts.Cancel();
                                 break;
                             }
@@ -443,10 +465,17 @@ public class TuiApp
                         
                         try
                         {
-                            await Task.Delay(200, linkedCts.Token);
+                            await Task.Delay(100, linkedCts.Token);
                         }
                         catch (OperationCanceledException)
                         {
+                            foreach (var t in _progressTasks.Values)
+                            {
+                                if (!t.IsFinished && !_taskDisplayStatuses.ContainsKey(t.Id))
+                                {
+                                    _taskDisplayStatuses[t.Id] = TaskDisplayStatus.Cancelled;
+                                }
+                            }
                             break;
                         }
                     }
@@ -763,11 +792,33 @@ public class TuiApp
 
             task.Value = e.BytesDownloaded;
             _taskSpeeds[task.Id] = e.SpeedBytesPerSecond;
+
+            if (e.BytesDownloaded >= e.TotalBytes && e.TotalBytes > 0)
+            {
+                _taskDisplayStatuses[task.Id] = TaskDisplayStatus.Finished;
+            }
         }
     }
 
     private void OnPauseChanged(bool isPaused)
     {
+        if (isPaused)
+        {
+            var now = Environment.TickCount64;
+            var interval = (long)AppSpinner.Interval.TotalMilliseconds;
+            var count = AppSpinner.Frames.Count;
+            var frameIdx = (int)((now / interval) % count);
+
+            foreach (var task in _progressTasks.Values)
+            {
+                _frozenFrames[task.Id] = frameIdx;
+            }
+        }
+        else
+        {
+            _frozenFrames.Clear();
+        }
+
         foreach (var task in _progressTasks.Values)
         {
             var current = task.Description;
@@ -851,6 +902,52 @@ public class TuiApp
             }
 
             return new Text($"{(int)eta.TotalMinutes}m:{eta.Seconds:D2}s");
+        }
+    }
+
+    private sealed class SpinnerColumn : ProgressColumn
+    {
+        private readonly Downloader _downloader;
+        private readonly TuiApp _app;
+
+        public SpinnerColumn(TuiApp app, Downloader downloader)
+        {
+            _app = app;
+            _downloader = downloader;
+        }
+
+        public override IRenderable Render(RenderOptions options, ProgressTask task, TimeSpan deltaTime)
+        {
+            if (_app._taskDisplayStatuses.TryGetValue(task.Id, out var status))
+            {
+                switch (status)
+                {
+                    case TaskDisplayStatus.Finished: return new Markup("[bold green]✓[/] ");
+                    case TaskDisplayStatus.Saved:
+                        _app._frozenFrames.TryGetValue(task.Id, out var sIdx);
+                        sIdx %= AppSpinner.Frames.Count;
+                        var sFrame = AppSpinner.Frames[sIdx];
+                        return new Markup($"[bold blue]{Markup.Escape(sFrame)}[/] ");
+                    case TaskDisplayStatus.Cancelled: return new Markup("[bold red]✗[/] ");
+                }
+            }
+
+            if (task.IsFinished)
+            {
+                return new Markup("[bold green]✓[/] ");
+            }
+
+            if (_downloader.IsPaused)
+            {
+                _app._frozenFrames.TryGetValue(task.Id, out var pIdx);
+                pIdx %= AppSpinner.Frames.Count;
+                var pFrame = AppSpinner.Frames[pIdx];
+                return new Markup($"[bold yellow]{Markup.Escape(pFrame)}[/] ");
+            }
+
+            var frameIndex = (int)((Environment.TickCount64 / (long)AppSpinner.Interval.TotalMilliseconds) % AppSpinner.Frames.Count);
+            var activeFrame = AppSpinner.Frames[frameIndex];
+            return new Markup($"[bold yellow]{Markup.Escape(activeFrame)}[/] ");
         }
     }
 }
