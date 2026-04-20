@@ -308,7 +308,8 @@ public class TuiApp
                                 _progressTasks[progressKey] = progressTask;
                                 progressTask.StartTask();
 
-                                await _downloader.DownloadFileAsync(unrestricted.Download, destPath, progressKey, cancellationToken);
+                                var rootPath = Settings.GetRootPathForType(resolved.Type);
+                                await _downloader.DownloadFileAsync(unrestricted.Download, destPath, rootPath, progressKey, cancellationToken);
 
                                 progressTask.Value = progressTask.MaxValue;
                                 progressTask.StopTask();
@@ -355,7 +356,8 @@ public class TuiApp
                 try { await downloadLoopTask; } catch { }
             }
 
-            Downloader.CleanupFiles(activePaths);
+            var cleanupRoot = resolved != null ? Settings.GetRootPathForType(resolved.Type) : null;
+            Downloader.CleanupFiles(activePaths, cleanupRoot);
             throw tex;
         }
         catch (Exception ex)

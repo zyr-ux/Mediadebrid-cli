@@ -82,6 +82,17 @@ public static class Settings
         File.WriteAllText(ConfigFilePath, json);
     }
 
+    public static string GetRootPathForType(string? type)
+    {
+        if (string.IsNullOrEmpty(type)) return MediaRoot;
+        return type.ToLower() switch
+        {
+            "game" => GamesRoot,
+            "other" => OthersRoot,
+            _ => MediaRoot
+        };
+    }
+
     public static bool IsConfigured()
     {
         return !string.IsNullOrWhiteSpace(Instance.RealDebridApiToken);

@@ -8,7 +8,7 @@ namespace MediaDebrid_cli.Services;
 public class Downloader
 {
     private readonly HttpClient _httpClient;
-    private static readonly ConcurrentDictionary<string, byte> _activeTempFiles = new();
+    private static readonly ConcurrentDictionary<string, string> _activeTempFiles = new();
 
     static Downloader()
     {
@@ -22,15 +22,21 @@ public class Downloader
 
     public static void CleanupFiles(IEnumerable<string> tempPaths, string? rootPath = null)
     {
-        rootPath ??= Settings.Instance.MediaRoot;
         foreach (var path in tempPaths.ToList())
         {
             try
             {
                 if (File.Exists(path)) File.Delete(path);
                 
+                string? currentRoot = rootPath;
+                if (currentRoot == null)
+                {
+                    _activeTempFiles.TryGetValue(path, out currentRoot);
+                    currentRoot ??= Settings.MediaRoot;
+                }
+
                 string? dir = Path.GetDirectoryName(path);
-                if (dir != null) DeleteEmptyDirectories(dir, rootPath);
+                if (dir != null) DeleteEmptyDirectories(dir, currentRoot);
             }
             catch { /* Ignore cleanup errors */ }
             finally
@@ -90,7 +96,7 @@ public class Downloader
         _httpClient = new HttpClient();
     }
 
-    public async Task DownloadFileAsync(string url, string destPath, string? progressKey = null, CancellationToken cancellationToken = default)
+    public async Task DownloadFileAsync(string url, string destPath, string? rootPath = null, string? progressKey = null, CancellationToken cancellationToken = default)
     {
         bool segmented = Settings.ParallelDownloadEnabled;
         int segments = Settings.ConnectionsPerFile;
@@ -100,15 +106,15 @@ public class Downloader
 
         if (segmented)
         {
-            await DownloadSegmentedAsync(url, destPath, segments, resolvedProgressKey, cancellationToken);
+            await DownloadSegmentedAsync(url, destPath, segments, resolvedProgressKey, rootPath, cancellationToken);
         }
         else
         {
-            await DownloadSingleAsync(url, destPath, resolvedProgressKey, cancellationToken: cancellationToken);
+            await DownloadSingleAsync(url, destPath, resolvedProgressKey, rootPath, 0, cancellationToken);
         }
     }
 
-    private async Task DownloadSegmentedAsync(string url, string destPath, int segments, string progressKey, CancellationToken cancellationToken = default)
+    private async Task DownloadSegmentedAsync(string url, string destPath, int segments, string progressKey, string? rootPath = null, CancellationToken cancellationToken = default)
     {
         var headReq = new HttpRequestMessage(HttpMethod.Head, url);
         var headRes = await _httpClient.SendAsync(headReq, cancellationToken);
@@ -119,11 +125,11 @@ public class Downloader
 
         if (totalSize == 0 || !acceptRanges || segments <= 1)
         {
-            await DownloadSingleAsync(url, destPath, progressKey, totalSize, cancellationToken);
+            await DownloadSingleAsync(url, destPath, progressKey, rootPath, totalSize, cancellationToken);
             return;
         }
 
-        string tempPath = CreateTempFile(destPath, totalSize);
+        string tempPath = CreateTempFile(destPath, totalSize, rootPath);
         var ranges = PlanByteRanges(totalSize, segments);
 
         long bytesDownloaded = 0;
@@ -186,18 +192,18 @@ public class Downloader
         {
             internalCts.Cancel();
             try { await Task.WhenAll(tasks); } catch { } 
-            CleanupFiles(new[] { tempPath });
+            CleanupFiles(new[] { tempPath }, rootPath);
             throw;
         }
     }
 
-    private async Task DownloadSingleAsync(string url, string destPath, string progressKey, long totalSize = 0, CancellationToken cancellationToken = default)
+    private async Task DownloadSingleAsync(string url, string destPath, string progressKey, string? rootPath = null, long totalSize = 0, CancellationToken cancellationToken = default)
     {
         var res = await _httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         res.EnsureSuccessStatusCode();
 
         totalSize = totalSize > 0 ? totalSize : (res.Content.Headers.ContentLength ?? 0);
-        string tempPath = CreateTempFile(destPath, totalSize);
+        string tempPath = CreateTempFile(destPath, totalSize, rootPath);
 
         long bytesDownloaded = 0;
         long lastUpdateTicks = 0;
@@ -238,15 +244,15 @@ public class Downloader
         }
         catch
         {
-            CleanupFiles(new[] { tempPath });
+            CleanupFiles(new[] { tempPath }, rootPath);
             throw;
         }
     }
 
-    private string CreateTempFile(string destPath, long totalSize)
+    private string CreateTempFile(string destPath, long totalSize, string? rootPath = null)
     {
         string tempPath = destPath + ".mdebrid";
-        _activeTempFiles.TryAdd(tempPath, 0);
+        _activeTempFiles.TryAdd(tempPath, rootPath ?? Settings.MediaRoot);
 
         using (var fs = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
         {
