@@ -443,9 +443,14 @@ public class TuiApp
 
                     if (!linkedCts.IsCancellationRequested)
                     {
-                        AnsiConsole.MarkupLine("\n[bold green]All downloads completed![/]");
+                        shouldDeletePartial = false;
                     }
                 });
+
+            if (!linkedCts.IsCancellationRequested)
+            {
+                AnsiConsole.MarkupLine("\n[bold green]All downloads completed![/]");
+            }
         }
         catch (OperationCanceledException)
         {
@@ -468,12 +473,17 @@ public class TuiApp
                 var cleanupRoot = resolved != null ? Settings.GetRootPathForType(resolved.Type) : null;
                 Downloader.CleanupFiles(activePaths, cleanupRoot, force: true);
             }
-            else
+            else if (linkedCts.IsCancellationRequested)
             {
                 AnsiConsole.MarkupLine("\n[yellow]Stopping... Partial progress preserved for resume.[/]");
                 var cleanupRoot = resolved != null ? Settings.GetRootPathForType(resolved.Type) : null;
                 Downloader.CleanupFiles(activePaths, cleanupRoot, force: false);
                 throw new TerminationException("");
+            }
+            else
+            {
+                var cleanupRoot = resolved != null ? Settings.GetRootPathForType(resolved.Type) : null;
+                Downloader.CleanupFiles(activePaths, cleanupRoot, force: false);
             }
         }
     }
@@ -519,6 +529,7 @@ public class TuiApp
             if (magnet is null || cancellationToken.IsCancellationRequested) break;
 
             await RunAsync(magnet, showLogo: false, cancellationToken: cancellationToken);
+            break;
         }
     }
 
