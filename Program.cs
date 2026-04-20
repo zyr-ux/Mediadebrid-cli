@@ -114,6 +114,31 @@ internal static class Program
             return 0;
 
         }
+        catch (RealDebridApiException ex)
+        {
+            ex.Print();
+            return 1;
+        }
+        catch (MagnetException ex)
+        {
+            ex.Print();
+            return 1;
+        }
+        catch (ConfigurationException ex)
+        {
+            ex.Print();
+            return 1;
+        }
+        catch (DownloadException ex)
+        {
+            ex.Print();
+            return 1;
+        }
+        catch (RealDebridClientException ex)
+        {
+            ex.Print();
+            return 1;
+        }
         catch (OperationCanceledException ex)
         {
             var tex = ex as TerminationException ?? new TerminationException();

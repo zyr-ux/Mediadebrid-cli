@@ -62,8 +62,7 @@ public class TuiApp
         var hash = MagnetParser.ExtractHash(magnet);
         if (string.IsNullOrEmpty(hash))
         {
-            AnsiConsole.MarkupLine("[red]Error:[/] [white]Invalid magnet link: Missing BTIH hash (xt=urn:btih:).[/]");
-            return;
+            throw new MagnetException("Invalid magnet link: Missing BTIH hash (xt=urn:btih:).");
         }
 
         TorrentItem? matched = null;
@@ -71,34 +70,42 @@ public class TuiApp
         bool newlyAdded = false;
 
         AnsiConsole.WriteLine();
-        await AnsiConsole.Status()
-            .StartAsync("Checking Real-Debrid cache...", async ctx =>
-            {
-                ctx.Spinner(Spinner.Known.Dots);
-                ctx.SpinnerStyle(Style.Parse("yellow"));
+        try
+        {
+            await AnsiConsole.Status()
+                .StartAsync("Checking Real-Debrid cache...", async ctx =>
+                {
+                    ctx.Spinner(Spinner.Known.Dots);
+                    ctx.SpinnerStyle(Style.Parse("yellow"));
 
-                matched = await GetClient().FindTorrentByHashAsync(hash, cancellationToken);
-                
-                if (matched == null)
-                {
-                    ctx.Status("[yellow]Adding magnet to check cache status...[/]");
-                    var addRes = await GetClient().AddMagnetAsync(magnet, cancellationToken);
-                    torrentId = addRes.Id;
-                    newlyAdded = true;
+                    matched = await GetClient().FindTorrentByHashAsync(hash, cancellationToken);
                     
-                    // Fetch fresh info to get status
-                    var info = await GetClient().GetTorrentInfoAsync(torrentId, cancellationToken);
-                    isCached = info.Status == "downloaded" || info.Status == "waiting_files_selection";
-                    
-                    // Update matched with enough info for the prompt if needed
-                    matched = new TorrentItem { Id = torrentId, Status = info.Status, Hash = hash };
-                }
-                else
-                {
-                    torrentId = matched.Id;
-                    isCached = matched.Status == "downloaded" || matched.Status == "waiting_files_selection";
-                }
-            });
+                    if (matched == null)
+                    {
+                        ctx.Status("[yellow]Adding magnet to check cache status...[/]");
+                        var addRes = await GetClient().AddMagnetAsync(magnet, cancellationToken);
+                        torrentId = addRes.Id;
+                        newlyAdded = true;
+                        
+                        // Fetch fresh info to get status
+                        var info = await GetClient().GetTorrentInfoAsync(torrentId, cancellationToken);
+                        isCached = info.Status == "downloaded" || info.Status == "waiting_files_selection";
+                        
+                        // Update matched with enough info for the prompt if needed
+                        matched = new TorrentItem { Id = torrentId, Status = info.Status, Hash = hash };
+                    }
+                    else
+                    {
+                        torrentId = matched.Id;
+                        isCached = matched.Status == "downloaded" || matched.Status == "waiting_files_selection";
+                    }
+                });
+        }
+        catch (RealDebridApiException) { throw; }
+        catch (HttpRequestException ex)
+        {
+            throw new TerminationException($"\n[red]✗[/] Network error during cache check: [white]{Markup.Escape(ex.Message)}[/]");
+        }
 
         if (!isCached)
         {
@@ -216,6 +223,11 @@ public class TuiApp
                 }
                 catch (TerminationException) { throw; }
                 catch (OperationCanceledException) { throw; }
+                catch (RealDebridApiException) { throw; }
+                catch (HttpRequestException ex)
+                {
+                    throw new TerminationException($"\n[red]✗[/] Network error during initialization: [white]{Markup.Escape(ex.Message)}[/]");
+                }
                 catch (Exception ex)
                 {
                     AnsiConsole.MarkupLine($"[red]Error during initialization:[/] [white]{Markup.Escape(ex.Message)}[/]");
@@ -405,7 +417,7 @@ public class TuiApp
                             catch (Exception ex)
                             {
                                 progressTask?.StopTask();
-                                throw new TerminationException($"[red]Download failed:[/] {Markup.Escape(ex.Message)}");
+                                throw new DownloadException($"Download failed: {ex.Message}", ex);
                             }
                         }
                     }, cancellationToken);
@@ -452,10 +464,12 @@ public class TuiApp
                 AnsiConsole.MarkupLine("\n[bold green]All downloads completed![/]");
             }
         }
-        catch (OperationCanceledException)
-        {
-            // Handled below
-        }
+        catch (OperationCanceledException) { throw; }
+        catch (MagnetException) { throw; }
+        catch (ConfigurationException) { throw; }
+        catch (DownloadException) { throw; }
+        catch (RealDebridClientException) { throw; }
+        catch (RealDebridApiException) { throw; }
         catch (Exception ex)
         {
             AnsiConsole.WriteException(ex);

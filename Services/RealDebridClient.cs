@@ -14,7 +14,7 @@ public class RealDebridClient
     {
         if (string.IsNullOrWhiteSpace(Settings.RealDebridApiToken))
         {
-            throw new InvalidOperationException("Real-Debrid API token is missing in .env configuration.");
+            throw new ConfigurationException("Real-Debrid API token is missing in .env configuration.");
         }
 
         _client = new HttpClient();
@@ -114,7 +114,7 @@ public class RealDebridClient
                 var errorRes = JsonSerializer.Deserialize<RealDebridErrorResponse>(errorBody);
                 if (errorRes != null && !string.IsNullOrEmpty(errorRes.Error))
                 {
-                    throw new HttpRequestException($"Real-Debrid API Error: {errorRes.Error} (Code: {errorRes.ErrorCode})", null, res.StatusCode);
+                    throw new RealDebridApiException(errorRes.Error, errorRes.ErrorCode, res.StatusCode);
                 }
             }
             catch (JsonException) { /* Not a JSON error or different format, fallback to default */ }
@@ -123,6 +123,6 @@ public class RealDebridClient
         }
 
         if (typeof(T) == typeof(object)) return default!;
-        return await res.Content.ReadFromJsonAsync<T>(cancellationToken: cancellationToken) ?? throw new InvalidOperationException("Failed to deserialize response.");
+        return await res.Content.ReadFromJsonAsync<T>(cancellationToken: cancellationToken) ?? throw new RealDebridClientException("Failed to deserialize Real-Debrid API response.");
     }
 }
