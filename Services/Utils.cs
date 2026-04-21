@@ -10,11 +10,8 @@ namespace MediaDebrid_cli.Services;
 
 public static class Utils
 {
-    public static void ApplyMetadataOverrides(MediaMetadata meta, string? typeOverride, string? titleOverride, string? yearOverride, int? seasonOverride, int? episodeOverride)
+    public static void ApplyMetadataOverrides(MediaMetadata meta, int? seasonOverride, int? episodeOverride)
     {
-        if (!string.IsNullOrWhiteSpace(titleOverride)) meta.Title = titleOverride.Trim();
-        if (!string.IsNullOrWhiteSpace(typeOverride)) meta.Type = typeOverride.Trim().ToLowerInvariant();
-        if (!string.IsNullOrWhiteSpace(yearOverride)) meta.Year = yearOverride.Trim();
         if (seasonOverride.HasValue) meta.Season = seasonOverride;
         if (episodeOverride.HasValue) meta.Episode = episodeOverride;
         if (meta.Season == null && meta.Type == "show") meta.Season = 1;
@@ -123,7 +120,6 @@ public static class Utils
         sb.AppendLine("  mediadebrid-cli <command> [options]");
         sb.AppendLine();
         sb.AppendLine("COMMANDS");
-        sb.AppendLine($"  {"add <magnet>",-30} - Add a magnet and start downloading");
         sb.AppendLine($"  {"resume <path>",-30} - Resume download from .mdebrid file");
         sb.AppendLine($"  {"set <key> <value>",-30} - Set a configuration value");
         sb.AppendLine($"  {"list",-30} - Show current configuration");
@@ -132,11 +128,6 @@ public static class Utils
         sb.AppendLine($"  {"-v, --version",-30} - Show version");
         sb.AppendLine($"  {"-h, --help",-30} - Show help");
         sb.AppendLine();
-        sb.AppendLine("METADATA OVERRIDES (used with `add`)");
-        sb.AppendLine($"  {"--type <movie|show|game|other>",-30} - Force media type");
-        sb.AppendLine($"  {"--title <name>",-30} - Override title");
-        sb.AppendLine($"  {"--year <yyyy>",-30} - Override release year");
-        sb.AppendLine($"  {"--season <num>",-30} - Season number");
         sb.AppendLine();
         sb.AppendLine("CONFIGURATION (used with `set`)");
         

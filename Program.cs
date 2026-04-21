@@ -35,21 +35,13 @@ internal static class Program
         // ── add Command ────────────────────────────────────────────────────
         var addCommand = new Command("add", "Add a magnet link and start downloading");
         var magnetArg = new Argument<string>("magnet") { Description = "Magnet link to process" };
-        var typeOption = new Option<string?>("--type", "Media type (movie or show)");
-        var titleOption = new Option<string?>("--title", "Title of the media");
-        var yearOption = new Option<string?>("--year", "Year of release (optional)");
-        var seasonOption = new Option<int?>("--season", "Season number (for shows)");
 
         addCommand.AddArgument(magnetArg);
-        addCommand.AddOption(typeOption);
-        addCommand.AddOption(titleOption);
-        addCommand.AddOption(yearOption);
-        addCommand.AddOption(seasonOption);
 
-        addCommand.SetHandler(async (magnet, type, title, year, season) =>
+        addCommand.SetHandler(async (magnet) =>
         {
-            await app.RunAsync(magnet, type, title, year, season, null, showLogo: true, cts.Token);
-        }, magnetArg, typeOption, titleOption, yearOption, seasonOption);
+            await app.RunAsync(magnet, null, null, showLogo: true, cts.Token);
+        }, magnetArg);
 
         rootCommand.AddCommand(addCommand);
 

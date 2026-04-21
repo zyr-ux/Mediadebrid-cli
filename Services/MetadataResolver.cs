@@ -111,17 +111,12 @@ public partial class MetadataResolver
     [GeneratedRegex(@"\s+", RegexOptions.Compiled)]
     private static partial Regex WhitespaceRegex();
 
-    public Task<MediaMetadata> ResolveAsync(string name, string? mediaTypeHint = null, CancellationToken cancellationToken = default)
+    public Task<MediaMetadata> ResolveAsync(string name, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
         var parsed = ParseName(name);
         parsed.Source = name;
-
-        if (!string.IsNullOrWhiteSpace(mediaTypeHint))
-        {
-            parsed.Type = mediaTypeHint.Trim();
-        }
 
         return Task.FromResult(parsed);
     }

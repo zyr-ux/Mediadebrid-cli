@@ -46,7 +46,7 @@ public class TuiApp
         AnsiConsole.Write(new FigletText("MediaDebrid").Color(Color.Green));
     }
 
-    public async Task RunAsync(string magnet, string? typeOverride = null, string? titleOverride = null, string? yearOverride = null, int? seasonOverride = null, int? episodeOverride = null, bool showLogo = true, CancellationToken cancellationToken = default, bool forceResume = false)
+    public async Task RunAsync(string magnet, int? seasonOverride = null, int? episodeOverride = null, bool showLogo = true, CancellationToken cancellationToken = default, bool forceResume = false)
     {
         if (showLogo)
         {
@@ -153,7 +153,7 @@ public class TuiApp
                 ctx.Spinner(Spinner.Known.Arc);
                 ctx.SpinnerStyle(Style.Parse("green"));
 
-                void ApplyOverrides(MediaMetadata meta) => Utils.ApplyMetadataOverrides(meta, typeOverride, titleOverride, yearOverride, seasonOverride, episodeOverride);
+                void ApplyOverrides(MediaMetadata meta) => Utils.ApplyMetadataOverrides(meta, seasonOverride, episodeOverride);
 
                 try
                 {
@@ -161,7 +161,7 @@ public class TuiApp
                     if (!string.IsNullOrEmpty(magnetName))
                     {
                         ctx.Status("[yellow]Resolving metadata from magnet...[/]");
-                        resolved = await _metadataResolver.ResolveAsync(magnetName, typeOverride, cancellationToken: cancellationToken);
+                        resolved = await _metadataResolver.ResolveAsync(magnetName, cancellationToken: cancellationToken);
                         ApplyOverrides(resolved);
                         resolved.Destination = PathGenerator.GetSeasonDirectory(resolved.Type, resolved.Title, resolved.Year, resolved.Season);
                         RenderMetadataPanel(resolved);
@@ -181,7 +181,7 @@ public class TuiApp
                     if (resolved == null)
                     {
                         ctx.Status("[yellow]Resolving metadata from Real-Debrid filename...[/]");
-                        resolved = await _metadataResolver.ResolveAsync(info.Filename, typeOverride, cancellationToken: cancellationToken);
+                        resolved = await _metadataResolver.ResolveAsync(info.Filename, cancellationToken: cancellationToken);
                         ApplyOverrides(resolved);
                         resolved.Destination = PathGenerator.GetSeasonDirectory(resolved.Type, resolved.Title, resolved.Year, resolved.Season);
                         RenderMetadataPanel(resolved);
@@ -513,7 +513,6 @@ public class TuiApp
                                         MagnetUri = magnet,
                                         FileId = unrestricted.Id,
                                         TotalSize = 0, // Will be set by downloader
-                                        TypeOverride = typeOverride,
                                         SeasonOverride = seasonOverride,
                                         EpisodeOverride = episodeOverride
                                     };
@@ -700,7 +699,7 @@ public class TuiApp
 
             if (magnet is null || cancellationToken.IsCancellationRequested) break;
 
-            await RunAsync(magnet, showLogo: false, cancellationToken: cancellationToken);
+            await RunAsync(magnet, null, null, showLogo: false, cancellationToken: cancellationToken);
             break;
         }
     }
@@ -720,7 +719,7 @@ public class TuiApp
             return;
         }
 
-        await RunAsync(metadata.MagnetUri, metadata.TypeOverride, null, null, metadata.SeasonOverride, metadata.EpisodeOverride, showLogo: true, cancellationToken, forceResume: true);
+        await RunAsync(metadata.MagnetUri, metadata.SeasonOverride, metadata.EpisodeOverride, showLogo: true, cancellationToken, forceResume: true);
     }
 
     public async Task EnsureConfiguredAsync(CancellationToken cancellationToken)
