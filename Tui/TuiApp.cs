@@ -114,7 +114,7 @@ public class TuiApp
         catch (RealDebridApiException) { throw; }
         catch (HttpRequestException ex)
         {
-            throw new TerminationException($"\n[bold red]X[/] Network error during cache check: [white]{Markup.Escape(ex.Message)}[/]");
+            throw new TerminationException($"[bold red]X[/] Network error during cache check: [white]{Markup.Escape(ex.Message)}[/]");
         }
 
         if (!isCached)
@@ -136,6 +136,7 @@ public class TuiApp
                 }
                 throw new TerminationException("[red]Caching declined by user. Magnet removed from Real-Debrid account.[/]");
             }
+            AnsiConsole.WriteLine();
         }
         else if (matched != null && !newlyAdded)
         {
@@ -196,7 +197,7 @@ public class TuiApp
                 catch (RealDebridApiException) { throw; }
                 catch (HttpRequestException ex)
                 {
-                    throw new TerminationException($"\n[red]X[/] Network error during initialization: [white]{Markup.Escape(ex.Message)}[/]");
+                    throw new TerminationException($"[red]X[/] Network error during initialization: [white]{Markup.Escape(ex.Message)}[/]");
                 }
                 catch (Exception ex)
                 {
@@ -237,6 +238,7 @@ public class TuiApp
                         });
 
                     var input = await CancellablePromptAsync(sPrompt, cancellationToken);
+                    AnsiConsole.WriteLine();
                     if (!string.IsNullOrWhiteSpace(input) && int.TryParse(input, out var chosenSeason))
                     {
                         seasonOverride = chosenSeason;
@@ -248,7 +250,7 @@ public class TuiApp
                 }
                 catch (OperationCanceledException)
                 {
-                    throw new TerminationException("\n[red]Application terminated. Exiting...[/]");
+                    throw new TerminationException("[red]Application terminated. Exiting...[/]");
                 }
             }
         }
@@ -273,6 +275,7 @@ public class TuiApp
                     });
 
                 var input = await CancellablePromptAsync(epPrompt, cancellationToken);
+                AnsiConsole.WriteLine();
                 if (!string.IsNullOrWhiteSpace(input) && int.TryParse(input, out var chosenEp))
                 {
                     episodeOverride = chosenEp;
@@ -282,7 +285,7 @@ public class TuiApp
             }
             catch (OperationCanceledException)
             {
-                throw new TerminationException("\n[red]Application terminated. Exiting...[/]");
+                throw new TerminationException("[red]Application terminated. Exiting...[/]");
             }
         }
 
@@ -306,7 +309,8 @@ public class TuiApp
                                 throw new TerminationException($"[bold red]Episode {episodeOverride.Value} already exists in your local library.[/]");
                             }
 
-                            AnsiConsole.MarkupLine($"[yellow]⚠[/] Found [cyan]{existingEpisodes.Count}[/] existing episodes in local library. They will be skipped.");
+                            AnsiConsole.MarkupLine($"[yellow]X[/] Found [cyan]{existingEpisodes.Count}[/] existing episodes in local library. They will be skipped.");
+                            AnsiConsole.WriteLine();
                         }
                     }
 
@@ -335,7 +339,7 @@ public class TuiApp
                 catch (RealDebridApiException) { throw; }
                 catch (HttpRequestException ex)
                 {
-                    throw new TerminationException($"\n[red]X[/] Network error during initialization: [white]{Markup.Escape(ex.Message)}[/]");
+                    throw new TerminationException($"[red]X[/] Network error during initialization: [white]{Markup.Escape(ex.Message)}[/]");
                 }
                 catch (Exception ex)
                 {
@@ -358,6 +362,7 @@ public class TuiApp
                 });
                 throw new TerminationException("[red]Caching declined by user. Magnet removed from Real-Debrid account.[/]");
             }
+            AnsiConsole.WriteLine();
         }
 
         if (info.Status != "downloaded")
@@ -373,8 +378,11 @@ public class TuiApp
 
         AnsiConsole.MarkupLine("[bold green]✓[/] Files are ready and cached!");
 
-        AnsiConsole.MarkupLine("\n[bold]Starting Downloads...[/]");
-        AnsiConsole.MarkupLine("[dim]Controls: [yellow]P[/] Pause | [green]X[/] Save & Exit | [red]Ctrl+C[/] Cancel & Delete\n[/]");
+        AnsiConsole.WriteLine();
+        AnsiConsole.MarkupLine("[bold]Starting Downloads...[/]");
+        AnsiConsole.MarkupLine("[dim]Controls: [yellow]P[/] Pause | [green]X[/] Save & Exit | [red]Ctrl+C[/] Cancel & Delete[/]");
+        AnsiConsole.WriteLine();
+        AnsiConsole.WriteLine();
 
         var activePaths = new ConcurrentBag<string>();
         Task? downloadLoopTask = null;
@@ -393,6 +401,17 @@ public class TuiApp
                 var unrestricted = await GetClient().UnrestrictLinkAsync(link, cancellationToken: linkedCts.Token);
                 var filename = unrestricted.Filename;
                 var destPath = PathGenerator.GetDestinationPath(resolved.Type, resolved.Title, resolved.Year, filename, resolved.Season);
+
+                // Skip if file already exists locally
+                if (File.Exists(destPath)) continue;
+
+                // Skip if it's an existing episode (for shows)
+                if (resolved.Type == "show" && Settings.Instance.SkipExistingEpisodes)
+                {
+                    var ep = Utils.ExtractEpisodeNumber(filename);
+                    if (ep.HasValue && existingEpisodes != null && existingEpisodes.Contains(ep.Value)) continue;
+                }
+
                 var tempPath = destPath + ".mdebrid";
 
                 // Resume detection
@@ -429,6 +448,7 @@ public class TuiApp
                     File.Delete(item.DestPath + ".mdebrid");
                     queuedDownloads[i] = (item.Unrestricted, null, item.DestPath);
                 }
+                AnsiConsole.WriteLine();
             }
         }
 
@@ -463,12 +483,9 @@ public class TuiApp
                                 var tempPath = destPath + ".mdebrid";
                                 var resumeData = item.ResumeData;
 
-                                // Skip if file already exists
+                                // Final safety check: Skip if file already exists
                                 if (File.Exists(destPath))
                                 {
-                                    var skipTask = ctx.AddTask($"[yellow]SKIPPED:[/] [cyan]{Markup.Escape(filename)}[/] (Already exists locally)", new ProgressTaskSettings { AutoStart = false });
-                                    skipTask.Increment(100);
-                                    skipTask.StopTask();
                                     continue;
                                 }
 
@@ -477,9 +494,6 @@ public class TuiApp
                                     var ep = Utils.ExtractEpisodeNumber(filename);
                                     if (ep.HasValue && existingEpisodes != null && existingEpisodes.Contains(ep.Value))
                                     {
-                                        var skipTask = ctx.AddTask($"[yellow]SKIPPED:[/] [cyan]{Markup.Escape(filename)}[/] (Episode {ep.Value} already exists)", new ProgressTaskSettings { AutoStart = false });
-                                        skipTask.Increment(100);
-                                        skipTask.StopTask();
                                         continue;
                                     }
                                 }
@@ -613,14 +627,11 @@ public class TuiApp
 
                     if (!linkedCts.IsCancellationRequested)
                     {
+                        AnsiConsole.WriteLine();
+                        AnsiConsole.MarkupLine("[bold green]All downloads completed![/]");
                         shouldDeletePartial = false;
                     }
                 });
-
-            if (!linkedCts.IsCancellationRequested)
-            {
-                AnsiConsole.MarkupLine("\n[bold green]All downloads completed![/]");
-            }
         }
         catch (OperationCanceledException) { throw; }
         catch (MagnetException) { throw; }
@@ -641,13 +652,17 @@ public class TuiApp
 
             if (shouldDeletePartial)
             {
-                AnsiConsole.MarkupLine("\n[red]Download cancelled. Cleaning up partial files...[/]");
+                AnsiConsole.WriteLine();
+                AnsiConsole.WriteLine();
+                AnsiConsole.MarkupLine("[red]Download cancelled. Cleaning up partial files...[/]");
                 var cleanupRoot = resolved != null ? Settings.GetRootPathForType(resolved.Type) : null;
                 Downloader.CleanupFiles(activePaths, cleanupRoot, force: true);
             }
             else if (linkedCts.IsCancellationRequested)
             {
-                AnsiConsole.MarkupLine("\n[yellow]Stopping... Partial progress preserved for resume.[/]");
+                AnsiConsole.WriteLine();
+                AnsiConsole.WriteLine();
+                AnsiConsole.MarkupLine("[yellow]Stopping... Partial progress preserved for resume.[/]");
                 var cleanupRoot = resolved != null ? Settings.GetRootPathForType(resolved.Type) : null;
                 Downloader.CleanupFiles(activePaths, cleanupRoot, force: false);
                 throw new TerminationException("");
@@ -690,10 +705,11 @@ public class TuiApp
                         }),
                     cancellationToken
                 );
+                AnsiConsole.WriteLine();
             }
             catch (OperationCanceledException)
             {
-                var ex = new TerminationException("\n[red]Application terminated. Exiting...[/]");
+                var ex = new TerminationException("[red]Application terminated. Exiting...[/]");
                 ex.Print();
                 throw ex;
             }
@@ -729,9 +745,12 @@ public class TuiApp
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        ShowLogo();
-        AnsiConsole.MarkupLine("\n[yellow]Initial Setup Required[/]");
-        AnsiConsole.MarkupLine("Please provide the following required configuration values:\n");
+        AnsiConsole.WriteLine();
+        AnsiConsole.WriteLine();
+        AnsiConsole.MarkupLine("[yellow]Initial Setup Required[/]");
+        AnsiConsole.MarkupLine("Please provide the following required configuration values:");
+        AnsiConsole.WriteLine();
+        AnsiConsole.WriteLine();
 
         try
         {
@@ -744,6 +763,7 @@ public class TuiApp
                         .Validate(k => string.IsNullOrWhiteSpace(k) ? ValidationResult.Error("[red]Key cannot be empty.[/]") : ValidationResult.Success()),
                     cancellationToken
                 );
+                AnsiConsole.WriteLine();
             }
 
             if (string.IsNullOrWhiteSpace(Settings.Instance.MediaRoot))
@@ -755,18 +775,21 @@ public class TuiApp
                         .PromptStyle("white"),
                     cancellationToken
                 );
+                AnsiConsole.WriteLine();
             }
         }
         catch (OperationCanceledException)
         {
-            var ex = new TerminationException("\n[red]Setup cancelled. Exiting...[/]");
+            var ex = new TerminationException("[red]Setup cancelled. Exiting...[/]");
             ex.Print();
             throw ex;
         }
 
         cancellationToken.ThrowIfCancellationRequested();
         Settings.Save();
-        AnsiConsole.MarkupLine("\n[green]Configuration saved successfully![/]\n");
+        AnsiConsole.WriteLine();
+        AnsiConsole.MarkupLine("[green]Configuration saved successfully![/]");
+        AnsiConsole.WriteLine();
     }
 
     public void SetConfigurationValue(string key, string value)
