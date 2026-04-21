@@ -131,7 +131,6 @@ public static class Utils
         sb.AppendLine($"  {"--title <name>",-30} - Override title");
         sb.AppendLine($"  {"--year <yyyy>",-30} - Override release year");
         sb.AppendLine($"  {"--season <num>",-30} - Season number");
-        sb.AppendLine($"  {"--ep <num>",-30} - Episode number");
         sb.AppendLine();
         sb.AppendLine("CONFIGURATION (used with `set`)");
         

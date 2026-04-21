@@ -39,19 +39,17 @@ internal static class Program
         var titleOption = new Option<string?>("--title", "Title of the media");
         var yearOption = new Option<string?>("--year", "Year of release (optional)");
         var seasonOption = new Option<int?>("--season", "Season number (for shows)");
-        var epOption = new Option<int?>("--ep", "Episode number (for shows)");
 
         addCommand.AddArgument(magnetArg);
         addCommand.AddOption(typeOption);
         addCommand.AddOption(titleOption);
         addCommand.AddOption(yearOption);
         addCommand.AddOption(seasonOption);
-        addCommand.AddOption(epOption);
 
-        addCommand.SetHandler(async (magnet, type, title, year, season, ep) =>
+        addCommand.SetHandler(async (magnet, type, title, year, season) =>
         {
-            await app.RunAsync(magnet, type, title, year, season, ep, showLogo: true, cts.Token);
-        }, magnetArg, typeOption, titleOption, yearOption, seasonOption, epOption);
+            await app.RunAsync(magnet, type, title, year, season, null, showLogo: true, cts.Token);
+        }, magnetArg, typeOption, titleOption, yearOption, seasonOption);
 
         rootCommand.AddCommand(addCommand);
 

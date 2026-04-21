@@ -531,9 +531,11 @@ public partial class MetadataResolver
 
             if (current.StartsWith('s') && current.Length > 2 && int.TryParse(current[1..], out season) && season > 0)
             {
-                if (TryParseEpisodeToken(next, out episode)) { boundaryIndex = i; return true; }
-                if (next == "e" && TryParseEpisodeToken(afterNext, out episode)) { boundaryIndex = i; return true; }
-                if (TryParseCompoundEpisodeToken(next, out episode)) { boundaryIndex = i; return true; }
+                boundaryIndex = i;
+                if (TryParseEpisodeToken(next, out episode)) return true;
+                if (next == "e" && TryParseEpisodeToken(afterNext, out episode)) return true;
+                if (TryParseCompoundEpisodeToken(next, out episode)) return true;
+                return true; // Return true even if no episode is found, as SXX is a strong signal for a show
             }
 
             if (TryParseNumericXPattern(current, out season, out episode))
@@ -544,16 +546,18 @@ public partial class MetadataResolver
 
             if (current is "season" and not "")
             {
-                if (TryParseNumberToken(next, out season) && TryParseEpisodeWordPattern(tokens, i + 2, out episode))
+                if (TryParseNumberToken(next, out season))
                 {
                     boundaryIndex = i;
+                    TryParseEpisodeWordPattern(tokens, i + 2, out episode);
                     return true;
                 }
             }
 
-            if (current == "s" && TryParseNumberToken(next, out season) && TryParseEpisodeWordPattern(tokens, i + 2, out episode))
+            if (current == "s" && TryParseNumberToken(next, out season))
             {
                 boundaryIndex = i;
+                TryParseEpisodeWordPattern(tokens, i + 2, out episode);
                 return true;
             }
 

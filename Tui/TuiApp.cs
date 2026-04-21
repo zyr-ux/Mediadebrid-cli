@@ -19,6 +19,7 @@ public class TuiApp
     private readonly ConcurrentDictionary<int, double> _taskSpeeds; // Use task.Id as key
     private readonly ConcurrentDictionary<int, TaskDisplayStatus> _taskDisplayStatuses;
     private readonly ConcurrentDictionary<int, int> _frozenFrames;
+    private readonly ConcurrentDictionary<int, string> _taskEpisodeTexts;
 
     private static readonly Spinner AppSpinner = Spinner.Known.Arc;
 
@@ -35,6 +36,7 @@ public class TuiApp
         _taskSpeeds = new ConcurrentDictionary<int, double>();
         _taskDisplayStatuses = new ConcurrentDictionary<int, TaskDisplayStatus>();
         _frozenFrames = new ConcurrentDictionary<int, int>();
+        _taskEpisodeTexts = new ConcurrentDictionary<int, string>();
     }
 
     private RealDebridClient GetClient() => _client ??= new RealDebridClient();
@@ -112,7 +114,7 @@ public class TuiApp
         catch (RealDebridApiException) { throw; }
         catch (HttpRequestException ex)
         {
-            throw new TerminationException($"\n[bold red]✗[/] Network error during cache check: [white]{Markup.Escape(ex.Message)}[/]");
+            throw new TerminationException($"\n[bold red]X[/] Network error during cache check: [white]{Markup.Escape(ex.Message)}[/]");
         }
 
         if (!isCached)
@@ -121,7 +123,7 @@ public class TuiApp
                 ? $"is currently [bold red]{matched.Status}[/]" 
                 : "is [bold red]Not Cached[/]";
             
-            AnsiConsole.MarkupLine($"[bold red]✗[/] This magnet {statusMsg} on Real-Debrid servers.");
+            AnsiConsole.MarkupLine($"[bold red]X[/] This magnet {statusMsg} on Real-Debrid servers.");
             
             if (!AnsiConsole.Confirm("Do you want Real-Debrid to cache it for you?"))
             {
@@ -188,11 +190,64 @@ public class TuiApp
                     ctx.Status("[yellow]Waiting for Real-Debrid status...[/]");
                     info = await GetClient().WaitForStatusAsync(torrentId, new[] { "waiting_files_selection", "downloaded", "dead" }, cancellationToken);
 
-                    if (info.Status == "dead")
-                    {
-                        throw new TerminationException("[bold red]✗[/] Torrent is dead.");
-                    }
+                }
+                catch (TerminationException) { throw; }
+                catch (OperationCanceledException) { throw; }
+                catch (RealDebridApiException) { throw; }
+                catch (HttpRequestException ex)
+                {
+                    throw new TerminationException($"\n[red]X[/] Network error during initialization: [white]{Markup.Escape(ex.Message)}[/]");
+                }
+                catch (Exception ex)
+                {
+                    AnsiConsole.MarkupLine($"[red]Error during initialization:[/] [white]{Markup.Escape(ex.Message)}[/]");
+                }
+            });
 
+        if (info == null || resolved == null) return;
+
+        if (info.Status == "dead")
+        {
+            throw new TerminationException("[bold red]X[/] Torrent is dead.");
+        }
+
+        // Interactive episode selection for shows
+        if (resolved.Type == "show" && !episodeOverride.HasValue)
+        {
+            try
+            {
+                var epPrompt = new TextPrompt<string>("Enter [green]episode number[/] to download (leave empty for all):")
+                    .AllowEmpty()
+                    .Validate(input =>
+                    {
+                        if (string.IsNullOrWhiteSpace(input)) return ValidationResult.Success();
+                        if (!int.TryParse(input, out var epNum) || epNum <= 0) return ValidationResult.Error("[red]Please enter a valid episode number.[/]");
+                        if (!info.Files.Any(f => Utils.IsEpisodeMatch(f.Path, epNum))) return ValidationResult.Error($"[red]Episode {epNum} not found in this torrent.[/]");
+                        return ValidationResult.Success();
+                    });
+
+                var input = await CancellablePromptAsync(epPrompt, cancellationToken);
+                if (!string.IsNullOrWhiteSpace(input) && int.TryParse(input, out var chosenEp))
+                {
+                    episodeOverride = chosenEp;
+                    resolved.Episode = chosenEp;
+                    AnsiConsole.MarkupLine($"[bold green]✓[/] Selected episode [cyan]{chosenEp}[/].");
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                throw new TerminationException("\n[red]Application terminated. Exiting...[/]");
+            }
+        }
+
+        await AnsiConsole.Status()
+            .StartAsync("Preparing selection...", async ctx =>
+            {
+                ctx.Spinner(Spinner.Known.Arc);
+                ctx.SpinnerStyle(Style.Parse("green"));
+
+                try
+                {
                     if (resolved.Type == "show" && Settings.Instance.SkipExistingEpisodes)
                     {
                         var seasonDir = PathGenerator.GetSeasonDirectory(resolved.Type, resolved.Title, resolved.Year, resolved.Season);
@@ -217,12 +272,12 @@ public class TuiApp
                         
                         if (!fileIds.Any())
                         {
-                            throw new TerminationException("[bold red]✗[/] No files found to download.");
+                            throw new TerminationException("[bold red]X[/] No files found to download.");
                         }
 
                         if (episodeOverride.HasValue && !info.Files.Any(f => Utils.IsEpisodeMatch(f.Path, episodeOverride.Value)))
                         {
-                            AnsiConsole.MarkupLine($"[bold red]✗[/] No files found matching episode [cyan]{episodeOverride.Value}[/]. Falling back to largest files.");
+                            AnsiConsole.MarkupLine($"[bold red]X[/] No files found matching episode [cyan]{episodeOverride.Value}[/]. Falling back to largest files.");
                         }
 
                         await GetClient().SelectFilesAsync(torrentId, string.Join(",", fileIds), cancellationToken: cancellationToken);
@@ -234,7 +289,7 @@ public class TuiApp
                 catch (RealDebridApiException) { throw; }
                 catch (HttpRequestException ex)
                 {
-                    throw new TerminationException($"\n[red]✗[/] Network error during initialization: [white]{Markup.Escape(ex.Message)}[/]");
+                    throw new TerminationException($"\n[red]X[/] Network error during initialization: [white]{Markup.Escape(ex.Message)}[/]");
                 }
                 catch (Exception ex)
                 {
@@ -248,7 +303,7 @@ public class TuiApp
         info = await GetClient().GetTorrentInfoAsync(torrentId, cancellationToken);
         if (info.Status != "downloaded")
         {
-            AnsiConsole.MarkupLine("[bold red]✗[/] Magnet is [bold red]not cached[/] on Real-Debrid servers.");
+            AnsiConsole.MarkupLine("[bold red]X[/] Magnet is [bold red]not cached[/] on Real-Debrid servers.");
             if (!AnsiConsole.Confirm("Do you want to wait for Real-Debrid to cache it?"))
             {
                 await AnsiConsole.Status().StartAsync("[red]Removing magnet...[/]", async ctx => 
@@ -337,6 +392,7 @@ public class TuiApp
                 .AutoClear(false)
                 .Columns(
                     new SpinnerColumn(this, _downloader),
+                    new EpisodeColumn(_taskEpisodeTexts),
                     new TaskDescriptionColumn(),
                     new ProgressBarColumn { Width = 200 },
                     new PercentageColumn(),
@@ -389,6 +445,17 @@ public class TuiApp
 
                                 progressTask = ctx.AddTask($"[cyan]{Markup.Escape(displayFilename)}[/]", new ProgressTaskSettings { AutoStart = false });
                                 _progressTasks[progressKey] = progressTask;
+
+                                if (resolved.Type == "show")
+                                {
+                                    var epNum = Utils.ExtractEpisodeNumber(filename);
+                                    if (epNum.HasValue)
+                                    {
+                                        var season = resolved.Season ?? 1;
+                                        _taskEpisodeTexts[progressTask.Id] = $"S{season:D2}E{epNum.Value:D2}";
+                                    }
+                                }
+
                                 progressTask.StartTask();
 
                                 var rootPath = Settings.GetRootPathForType(resolved.Type);
@@ -943,7 +1010,7 @@ public class TuiApp
                         sIdx %= AppSpinner.Frames.Count;
                         var sFrame = AppSpinner.Frames[sIdx];
                         return new Markup($"[bold blue]{Markup.Escape(sFrame)}[/] ");
-                    case TaskDisplayStatus.Cancelled: return new Markup("[bold red]✗[/] ");
+                    case TaskDisplayStatus.Cancelled: return new Markup("[bold red]X[/] ");
                 }
             }
 
@@ -963,6 +1030,21 @@ public class TuiApp
             var frameIndex = (int)((Environment.TickCount64 / (long)AppSpinner.Interval.TotalMilliseconds) % AppSpinner.Frames.Count);
             var activeFrame = AppSpinner.Frames[frameIndex];
             return new Markup($"[bold yellow]{Markup.Escape(activeFrame)}[/] ");
+        }
+    }
+
+    private sealed class EpisodeColumn : ProgressColumn
+    {
+        private readonly ConcurrentDictionary<int, string> _episodeTexts;
+        public EpisodeColumn(ConcurrentDictionary<int, string> episodeTexts) => _episodeTexts = episodeTexts;
+
+        public override IRenderable Render(RenderOptions options, ProgressTask task, TimeSpan deltaTime)
+        {
+            if (_episodeTexts.TryGetValue(task.Id, out var epText))
+            {
+                return new Markup($"[cyan]{Markup.Escape(epText)}[/] ");
+            }
+            return Text.Empty;
         }
     }
 }
