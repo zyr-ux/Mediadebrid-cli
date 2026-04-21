@@ -583,6 +583,7 @@ public class TuiApp
 
                                 foreach (var t in _progressTasks.Values)
                                 {
+                                    if (t.IsFinished) continue;
                                     _taskDisplayStatuses[t.Id] = TaskDisplayStatus.Saved;
                                     _frozenFrames[t.Id] = frameIdx;
                                 }
