@@ -64,6 +64,7 @@ When modifying or generating code for `MediaDebrid-cli`, adhere strictly to the 
 
 ### 5. Resumable Downloads
 - The `Downloader.cs` uses a 4KB file footer to store JSON metadata (`ResumeMetadata`) allowing downloads to persist across application restarts. When modifying download logic, ensure this metadata is correctly parsed, updated, and re-written, avoiding data corruption.
+- **Metadata Overrides**: CLI-level overrides for type, title, year, and season have been removed to simplify the interface. The application relies on `MetadataResolver` for automatic detection and interactive TUI prompts for specific season/episode selection. These selections are then persisted in the `ResumeMetadata` footer.
 
 ---
 

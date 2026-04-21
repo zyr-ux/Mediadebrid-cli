@@ -52,7 +52,7 @@ dotnet run -- [commands]
     ```
 *   **Add a Magnet Link**
     ```bash
-    mediadebrid-cli add "magnet:?xt=urn:btih:..." [--type movie|show] [--title "Movie Title"] [--year 2023] [--season 1] [--ep 5]
+    mediadebrid-cli add "magnet:?xt=urn:btih:..."
     ```
 *   **Resume a Download**
     ```bash
@@ -118,7 +118,7 @@ The JSON payload contains critical state information:
     { "Start": 0, "End": 268435455, "Current": 150000000 },
     { "Start": 268435456, "End": 536870911, "Current": 268435456 }, ...
   ],
-  "TypeOverride": "movie",
+  "SeasonOverride": 1,
   "EpisodeOverride": null
 }
 ```
