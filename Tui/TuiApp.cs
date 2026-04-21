@@ -426,7 +426,22 @@ public class TuiApp
                             }
                             catch (Exception ex)
                             {
-                                progressTask?.StopTask();
+                                shouldDeletePartial = false;
+                                if (progressTask != null)
+                                {
+                                    _taskDisplayStatuses[progressTask.Id] = TaskDisplayStatus.Cancelled;
+                                    progressTask.StopTask();
+                                }
+                                
+                                // Mark all other active tasks as cancelled to ensure UI correctly reflects failure
+                                foreach (var t in _progressTasks.Values)
+                                {
+                                    if (!t.IsFinished && !_taskDisplayStatuses.ContainsKey(t.Id))
+                                    {
+                                        _taskDisplayStatuses[t.Id] = TaskDisplayStatus.Cancelled;
+                                    }
+                                }
+
                                 throw new DownloadException($"Download failed: {ex.Message}", ex);
                             }
                         }
