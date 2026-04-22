@@ -1,11 +1,5 @@
 <p align="center">
-  <pre align="center">
-  __  __ 
- |  \/  |
- | |\/| |
- | |  | |
- |_|  |_|
-  </pre>
+  <img src="Logos/logo-transparent.svg" width="200" alt="MediaDebrid Logo">
 </p>
 
 <h1 align="center">MediaDebrid-cli</h1>
