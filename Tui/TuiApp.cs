@@ -13,7 +13,7 @@ public class TuiApp
     private readonly MetadataResolver _metadataResolver;
 
     private readonly ConcurrentDictionary<string, ProgressTask> _progressTasks;
-    private readonly ConcurrentDictionary<int, double> _taskSpeeds; // Use task.Id as key
+    private readonly ConcurrentDictionary<int, double> _taskSpeeds;
     private readonly ConcurrentDictionary<int, TaskDisplayStatus> _taskDisplayStatuses;
     private readonly ConcurrentDictionary<int, int> _frozenFrames;
     private readonly ConcurrentDictionary<int, string> _taskEpisodeTexts;
@@ -95,11 +95,11 @@ public class TuiApp
                         newlyAdded = true;
                         
                         // Fetch fresh info to get status
-                        var info = await GetClient().GetTorrentInfoAsync(torrentId, cancellationToken);
-                        isCached = info.Status == "downloaded" || info.Status == "waiting_files_selection";
+                        var cacheInfo = await GetClient().GetTorrentInfoAsync(torrentId, cancellationToken);
+                        isCached = cacheInfo.Status == "downloaded" || cacheInfo.Status == "waiting_files_selection";
                         
                         // Update matched with enough info for the prompt if needed
-                        matched = new TorrentItem { Id = torrentId, Status = info.Status, Hash = hash };
+                        matched = new TorrentItem { Id = torrentId, Status = cacheInfo.Status, Hash = hash };
                     }
                     else
                     {
@@ -126,7 +126,7 @@ public class TuiApp
             {
                 if (newlyAdded && !string.IsNullOrEmpty(torrentId))
                 {
-                    await AnsiConsole.Status().StartAsync("[red]Removing magnet...[/]", async ctx => 
+                    await AnsiConsole.Status().StartAsync("[red]Removing magnet...[/]", async _ => 
                     {
                         await GetClient().DeleteTorrentAsync(torrentId, cancellationToken);
                     });
@@ -367,7 +367,7 @@ public class TuiApp
             AnsiConsole.MarkupLine("[bold red]X[/] Magnet is [bold red]not cached[/] on Real-Debrid servers.");
             if (!AnsiConsole.Confirm("Do you want to wait for Real-Debrid to cache it?"))
             {
-                await AnsiConsole.Status().StartAsync("[red]Removing magnet...[/]", async ctx => 
+                await AnsiConsole.Status().StartAsync("[red]Removing magnet...[/]", async _ => 
                 {
                     await GetClient().DeleteTorrentAsync(torrentId, cancellationToken);
                 });
@@ -661,7 +661,11 @@ public class TuiApp
         {
             if (downloadLoopTask != null && !downloadLoopTask.IsCompleted)
             {
-                try { await downloadLoopTask; } catch { }
+                try { await downloadLoopTask; }
+                catch (Exception)
+                {
+                    // Suppress background shutdown errors to avoid masking the primary flow outcome.
+                }
             }
 
             if (shouldDeletePartial)
@@ -734,7 +738,7 @@ public class TuiApp
 
             if (magnet is null || cancellationToken.IsCancellationRequested) break;
 
-            await RunAsync(magnet, null, null, showLogo: false, cancellationToken: cancellationToken);
+            await RunAsync(magnet, showLogo: false, cancellationToken: cancellationToken);
             break;
         }
     }
@@ -1007,7 +1011,7 @@ public class TuiApp
     {
         if (_progressTasks.TryGetValue(e.ProgressKey, out var task))
         {
-            if (task.MaxValue != e.TotalBytes && e.TotalBytes > 0)
+            if (e.TotalBytes > 0)
             {
                 task.MaxValue = e.TotalBytes;
             }
