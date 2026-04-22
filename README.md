@@ -1,4 +1,16 @@
+<div align="center">
+
+```text
+  __  __ 
+ |  \/  |
+ | |\/| |
+ | |  | |
+ |_|  |_|
+```
+
 # MediaDebrid-cli
+</div>
+
 
 MediaDebrid-cli is a powerful, feature-rich command-line interface (CLI) application built using **.NET 10.0** and C#. It acts as an advanced downloader that utilizes the **Real-Debrid API** to quickly resolve magnet links and download media files directly to your system. 
 
