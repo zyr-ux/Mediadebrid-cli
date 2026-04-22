@@ -1,10 +1,16 @@
-```diff
-+  __  __   _____   ____    ___      _      ____    _____   ____    ____    ___   ____  
-+ |  \/  | | ____| |  _ \  |_ _|    / \    |  _ \  | ____| | __ )  |  _ \  |_ _| |  _ \ 
-+ | |\/| | |  _|   | | | |  | |    / _ \   | | | | |  _|   |  _ \  | |_) |  | |  | | | |
-+ | |  | | | |___  | |_| |  | |   / ___ \  | |_| | | |___  | |_) | |  _ <   | |  | |_| |
-+ |_|  |_| |_____| |____/  |___| /_/   \_\ |____/  |_____| |____/  |_| \_\ |___| |____/ 
+<div align="center">
+
+```text
+  __  __   _____   ____    ___      _      ____    _____   ____    ____    ___   ____  
+ |  \/  | | ____| |  _ \  |_ _|    / \    |  _ \  | ____| | __ )  |  _ \  |_ _| |  _ \ 
+ | |\/| | |  _|   | | | |  | |    / _ \   | | | | |  _|   |  _ \  | |_) |  | |  | | | |
+ | |  | | | |___  | |_| |  | |   / ___ \  | |_| | | |___  | |_) | |  _ <   | |  | |_| |
+ |_|  |_| |_____| |____/  |___| /_/   \_\ |____/  |_____| |____/  |_| \_\ |___| |____/ 
 ```
+
+</div>
+
+
 
 MediaDebrid-cli is a powerful, feature-rich command-line interface (CLI) application built using **.NET 10.0** and C#. It acts as an advanced downloader that utilizes the **Real-Debrid API** to quickly resolve magnet links and download media files directly to your system. 
 
