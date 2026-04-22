@@ -43,7 +43,7 @@ public class TuiApp
         AnsiConsole.Write(new FigletText("MediaDebrid").Color(Color.Green));
     }
 
-    public async Task RunAsync(string magnet, int? seasonOverride = null, int? episodeOverride = null, bool showLogo = true, CancellationToken cancellationToken = default, bool forceResume = false)
+    public async Task RunAsync(string magnet, string? seasonOverride = null, string? episodeOverride = null, bool showLogo = true, CancellationToken cancellationToken = default, bool forceResume = false)
     {
         if (showLogo)
         {
@@ -64,7 +64,7 @@ public class TuiApp
         var torrentId = string.Empty;
         TorrentInfo? info = null;
         MediaMetadata? resolved = null;
-        HashSet<int>? existingEpisodes = null;
+        HashSet<string>? existingEpisodeKeys = null;
 
         var hash = MagnetParser.ExtractHash(magnet);
         if (string.IsNullOrEmpty(hash))
@@ -210,7 +210,7 @@ public class TuiApp
         }
 
         // Interactive season selection for multi-season shows
-        if (resolved.Type == "show" && !seasonOverride.HasValue)
+        if (resolved.Type == "show" && string.IsNullOrEmpty(seasonOverride))
         {
             var seasonsInTorrent = info.Files
                 .Select(f => Utils.ExtractSeasonNumber(f.Path))
@@ -222,35 +222,43 @@ public class TuiApp
 
             if (seasonsInTorrent.Count > 1)
             {
+                // Display accurate intent for all-seasons mode before prompting for overrides.
+                resolved.Season = "Multiple";
+                var defaultSeasonDir = PathGenerator.GetSeasonDirectory(resolved.Type, resolved.Title, resolved.Year, 1);
+                resolved.Destination = Directory.GetParent(defaultSeasonDir)?.FullName ?? defaultSeasonDir;
+                RenderMetadataPanel(resolved);
+
                 try
                 {
                     string? input = null;
                     while (!cancellationToken.IsCancellationRequested)
                     {
-                        input = await ReadLineWithEffectAsync($"[yellow]Multiple seasons detected ({string.Join(", ", seasonsInTorrent.Select(s => $"S{s:D2}"))}).[/]\nEnter [green]season number[/] to download (leave empty for all)", cancellationToken);
+                        input = await ReadLineWithEffectAsync($"[yellow]Multiple seasons detected ({string.Join(", ", seasonsInTorrent.Select(s => $"S{s:D2}"))}).[/]\nEnter [green]season number or range[/] (e.g. 1-3) to download (leave empty for all)", cancellationToken);
                         
                         if (cancellationToken.IsCancellationRequested) break;
                         if (string.IsNullOrWhiteSpace(input)) break;
 
-                        if (!int.TryParse(input, out var sNum) || sNum <= 0)
+                        var parsed = Utils.ParseRange(input);
+                        if (!parsed.Any())
                         {
-                            AnsiConsole.MarkupLine("[red]Please enter a valid season number.[/]");
+                            AnsiConsole.MarkupLine("[red]Please enter a valid season number or range (e.g., 1-2, 4).[/]");
                             continue;
                         }
-                        if (!seasonsInTorrent.Contains(sNum))
+                        
+                        if (!parsed.Any(s => seasonsInTorrent.Contains(s)))
                         {
-                            AnsiConsole.MarkupLine($"[red]Season {sNum} not found in this torrent.[/]");
+                            AnsiConsole.MarkupLine($"[red]None of the specified seasons ({input}) were found in this torrent.[/]");
                             continue;
                         }
                         break;
                     }
 
-                    if (!string.IsNullOrWhiteSpace(input) && int.TryParse(input, out var chosenSeason))
+                    if (!string.IsNullOrWhiteSpace(input))
                     {
-                        seasonOverride = chosenSeason;
-                        resolved.Season = chosenSeason;
-                        resolved.Destination = PathGenerator.GetSeasonDirectory(resolved.Type, resolved.Title, resolved.Year, resolved.Season);
-                        AnsiConsole.MarkupLine($"[bold green]✓[/] Selected season [cyan]S{chosenSeason:D2}[/].");
+                        seasonOverride = input;
+                        resolved.Season = input;
+                        resolved.Destination = PathGenerator.GetSeasonDirectory(resolved.Type, resolved.Title, resolved.Year); // Generic dir for ranges
+                        AnsiConsole.MarkupLine($"[bold green]✓[/] Selected seasons [cyan]{input}[/].");
                         RenderMetadataPanel(resolved);
                     }
                 }
@@ -262,43 +270,63 @@ public class TuiApp
         }
 
         // Interactive episode selection for shows
-        if (resolved.Type == "show" && !episodeOverride.HasValue)
+        if (resolved.Type == "show" && string.IsNullOrEmpty(episodeOverride))
         {
             try
             {
                 string? input = null;
                 while (!cancellationToken.IsCancellationRequested)
                 {
-                    input = await ReadLineWithEffectAsync("Enter [green]episode number[/] to download (leave empty for all)", cancellationToken);
+                    input = await ReadLineWithEffectAsync("Enter [green]episode number or range[/] (e.g. 1-12) to download (leave empty for all)", cancellationToken);
                     
                     if (cancellationToken.IsCancellationRequested) break;
                     if (string.IsNullOrWhiteSpace(input)) break;
 
-                    if (!int.TryParse(input, out var epNum) || epNum <= 0)
+                    var parsed = Utils.ParseRange(input);
+                    if (!parsed.Any())
                     {
-                        AnsiConsole.MarkupLine("[red]Please enter a valid episode number.[/]");
+                        AnsiConsole.MarkupLine("[red]Please enter a valid episode number or range (e.g., 1-5, 8).[/]");
                         continue;
                     }
-                    if (!info.Files.Any(f => Utils.IsEpisodeMatch(f.Path, epNum, seasonOverride)))
+
+                    var sRange = Utils.ParseRange(seasonOverride);
+                    if (!info.Files.Any(f => Utils.IsEpisodeMatch(f.Path, parsed, sRange.Any() ? sRange : null)))
                     {
-                        var scope = seasonOverride.HasValue ? $"in season {seasonOverride}" : "in this torrent";
-                        AnsiConsole.MarkupLine($"[red]Episode {epNum} not found {scope}.[/]");
+                        var scope = sRange.Any() ? $"in selected seasons" : "in this torrent";
+                        AnsiConsole.MarkupLine($"[red]No episodes from range {input} found {scope}.[/]");
                         continue;
                     }
                     break;
                 }
 
-                if (!string.IsNullOrWhiteSpace(input) && int.TryParse(input, out var chosenEp))
+                if (!string.IsNullOrWhiteSpace(input))
                 {
-                    episodeOverride = chosenEp;
-                    resolved.Episode = chosenEp;
-                    AnsiConsole.MarkupLine($"[bold green]✓[/] Selected episode [cyan]{chosenEp}[/].");
+                    episodeOverride = input;
+                    resolved.Episode = input;
+                    AnsiConsole.MarkupLine($"[bold green]✓[/] Selected episodes [cyan]{input}[/].");
                 }
             }
             catch (OperationCanceledException)
             {
                 throw new TerminationException("[red]Application terminated. Exiting...[/]");
             }
+        }
+
+        var selectedSeasons = Utils.ParseRange(seasonOverride);
+        if (resolved.Type == "show" && selectedSeasons.Count == 0)
+        {
+            selectedSeasons = info.Files
+                .Select(f => Utils.ExtractSeasonNumber(f.Path))
+                .Where(s => s.HasValue)
+                .Select(s => s!.Value)
+                .ToHashSet();
+
+            if (!selectedSeasons.Any() && !string.IsNullOrEmpty(resolved.Season))
+            {
+                selectedSeasons = Utils.ParseRange(resolved.Season);
+            }
+
+            if (!selectedSeasons.Any()) selectedSeasons.Add(1);
         }
 
         await AnsiConsole.Status()
@@ -311,17 +339,29 @@ public class TuiApp
                 {
                     if (resolved.Type == "show" && Settings.Instance.SkipExistingEpisodes)
                     {
-                        var seasonDir = PathGenerator.GetSeasonDirectory(resolved.Type, resolved.Title, resolved.Year, resolved.Season);
-                        existingEpisodes = Utils.GetExistingEpisodes(seasonDir);
+                        var seasonsToCheck = selectedSeasons;
 
-                        if (existingEpisodes.Any())
+                        existingEpisodeKeys = new HashSet<string>();
+                        foreach (var s in seasonsToCheck)
                         {
-                            if (episodeOverride.HasValue && existingEpisodes.Contains(episodeOverride.Value))
+                            var seasonDir = PathGenerator.GetSeasonDirectory(resolved.Type, resolved.Title, resolved.Year, s);
+                            var existingInSeason = Utils.GetExistingEpisodes(seasonDir);
+                            foreach (var ep in existingInSeason)
                             {
-                                throw new TerminationException($"[bold red]Episode {episodeOverride.Value} already exists in your local library.[/]");
+                                existingEpisodeKeys.Add(Utils.BuildEpisodeKey(s, ep));
+                            }
+                        }
+
+                        if (existingEpisodeKeys.Any())
+                        {
+                            var epRange = Utils.ParseRange(episodeOverride);
+                            var allSelectedExist = epRange.Any() && seasonsToCheck.All(s => epRange.All(e => existingEpisodeKeys.Contains(Utils.BuildEpisodeKey(s, e))));
+                            if (allSelectedExist)
+                            {
+                                throw new TerminationException($"[bold red]All selected episodes ({episodeOverride}) already exist in your local library.[/]");
                             }
 
-                            AnsiConsole.MarkupLine($"[yellow]X[/] Found [cyan]{existingEpisodes.Count}[/] existing episodes in local library. They will be skipped.");
+                            AnsiConsole.MarkupLine($"[yellow]X[/] Found [cyan]{existingEpisodeKeys.Count}[/] existing episodes in local library. They will be skipped.");
                             AnsiConsole.WriteLine();
                         }
                     }
@@ -329,17 +369,12 @@ public class TuiApp
                     if (info.Status == "waiting_files_selection")
                     {
                         ctx.Status("[yellow]Selecting files...[/]");
-                        var fileIds = Utils.GetSelectedFiles(info.Files, seasonOverride, episodeOverride, existingEpisodes);
+                        var fileIds = Utils.GetSelectedFiles(info.Files, seasonOverride, episodeOverride, existingEpisodeKeys);
                         if (!fileIds.Any() && info.Files.Any()) fileIds = [info.Files.First().Id.ToString()];
-                        
+
                         if (!fileIds.Any())
                         {
                             throw new TerminationException("[bold red]X[/] No files found to download.");
-                        }
-
-                        if (episodeOverride.HasValue && !info.Files.Any(f => Utils.IsEpisodeMatch(f.Path, episodeOverride.Value, seasonOverride)))
-                        {
-                            AnsiConsole.MarkupLine($"[bold red]X[/] No files found matching episode [cyan]{episodeOverride.Value}[/] in selected season. Falling back to largest files.");
                         }
 
                         await GetClient().SelectFilesAsync(torrentId, string.Join(",", fileIds), cancellationToken: cancellationToken);
@@ -412,7 +447,7 @@ public class TuiApp
                 
                 var unrestricted = await GetClient().UnrestrictLinkAsync(link, cancellationToken: linkedCts.Token);
                 var filename = unrestricted.Filename;
-                var destPath = PathGenerator.GetDestinationPath(resolved.Type, resolved.Title, resolved.Year, filename, resolved.Season);
+                var destPath = PathGenerator.GetDestinationPath(resolved.Type, resolved.Title, resolved.Year, filename, seasonOverride);
 
                 // Skip if file already exists locally
                 if (File.Exists(destPath)) continue;
@@ -421,7 +456,16 @@ public class TuiApp
                 if (resolved.Type == "show" && Settings.Instance.SkipExistingEpisodes)
                 {
                     var ep = Utils.ExtractEpisodeNumber(filename);
-                    if (ep.HasValue && existingEpisodes != null && existingEpisodes.Contains(ep.Value)) continue;
+                    if (ep.HasValue && existingEpisodeKeys != null)
+                    {
+                        var sNum = Utils.ExtractSeasonNumber(filename);
+                        if (!sNum.HasValue && selectedSeasons.Count == 1)
+                        {
+                            sNum = selectedSeasons.First();
+                        }
+
+                        if (sNum.HasValue && existingEpisodeKeys.Contains(Utils.BuildEpisodeKey(sNum.Value, ep.Value))) continue;
+                    }
                 }
 
                 var tempPath = destPath + ".mdebrid";
@@ -506,9 +550,18 @@ public class TuiApp
                                 if (resolved.Type == "show" && Settings.Instance.SkipExistingEpisodes)
                                 {
                                     var ep = Utils.ExtractEpisodeNumber(filename);
-                                    if (ep.HasValue && existingEpisodes != null && existingEpisodes.Contains(ep.Value))
+                                    if (ep.HasValue && existingEpisodeKeys != null)
                                     {
-                                        continue;
+                                        var sNum = Utils.ExtractSeasonNumber(filename);
+                                        if (!sNum.HasValue && selectedSeasons.Count == 1)
+                                        {
+                                            sNum = selectedSeasons.First();
+                                        }
+
+                                        if (sNum.HasValue && existingEpisodeKeys.Contains(Utils.BuildEpisodeKey(sNum.Value, ep.Value)))
+                                        {
+                                            continue;
+                                        }
                                     }
                                 }
 
@@ -525,8 +578,8 @@ public class TuiApp
                                     var epNum = Utils.ExtractEpisodeNumber(filename);
                                     if (epNum.HasValue)
                                     {
-                                        var season = resolved.Season ?? 1;
-                                        _taskEpisodeTexts[progressTask.Id] = $"S{season:D2}E{epNum.Value:D2}";
+                                        var sNum = Utils.ExtractSeasonNumber(filename) ?? 1;
+                                        _taskEpisodeTexts[progressTask.Id] = $"S{sNum:D2}E{epNum.Value:D2}";
                                     }
                                 }
 
@@ -938,14 +991,14 @@ public class TuiApp
             AddGridRow("Type", $"[cyan]{char.ToUpper(meta.Type[0]) + meta.Type[1..]}[/]");
         }
 
-        if (meta.Season.HasValue)
+        if (!string.IsNullOrEmpty(meta.Season))
         {
-            AddGridRow("Season", $"[orange1]{meta.Season.Value}[/]");
+            AddGridRow("Season", $"[orange1]{Markup.Escape(meta.Season)}[/]");
         }
 
-        if (meta.Episode.HasValue)
+        if (!string.IsNullOrEmpty(meta.Episode))
         {
-            AddGridRow("Episode", $"[orange1]{meta.Episode.Value}[/]");
+            AddGridRow("Episode", $"[orange1]{Markup.Escape(meta.Episode)}[/]");
         }
 
         if (!string.IsNullOrWhiteSpace(meta.Version))

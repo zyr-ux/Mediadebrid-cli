@@ -6,8 +6,8 @@ public class ResumeMetadata
     public string FileId { get; set; } = string.Empty;
     public long TotalSize { get; set; }
     public List<SegmentProgress> Segments { get; set; } = new();
-    public int? SeasonOverride { get; set; }
-    public int? EpisodeOverride { get; set; }
+    public string? SeasonOverride { get; set; }
+    public string? EpisodeOverride { get; set; }
 }
 
 public class SegmentProgress

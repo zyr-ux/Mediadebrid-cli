@@ -10,34 +10,83 @@ namespace MediaDebrid_cli.Services;
 
 public static class Utils
 {
-    public static void ApplyMetadataOverrides(MediaMetadata meta, int? seasonOverride, int? episodeOverride)
+    public static void ApplyMetadataOverrides(MediaMetadata meta, string? seasonOverride, string? episodeOverride)
     {
-        if (seasonOverride.HasValue) meta.Season = seasonOverride;
-        if (episodeOverride.HasValue) meta.Episode = episodeOverride;
-        if (meta.Season == null && meta.Type == "show") meta.Season = 1;
+        if (!string.IsNullOrEmpty(seasonOverride)) meta.Season = seasonOverride;
+        if (!string.IsNullOrEmpty(episodeOverride)) meta.Episode = episodeOverride;
+        if (meta.Season == null && meta.Type == "show") meta.Season = "1";
     }
 
-    public static string[] GetSelectedFiles(List<TorrentFile> files, int? seasonOverride, int? episodeOverride, HashSet<int>? existingEpisodes = null)
+    public static HashSet<int> ParseRange(string? input)
     {
+        var result = new HashSet<int>();
+        if (string.IsNullOrWhiteSpace(input)) return result;
+
+        var parts = input.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        foreach (var part in parts)
+        {
+            if (int.TryParse(part, out var single) && single > 0)
+            {
+                result.Add(single);
+            }
+            else
+            {
+                var rangeParts = part.Split('-', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                if (rangeParts.Length == 2 &&
+                    int.TryParse(rangeParts[0], out var start) &&
+                    int.TryParse(rangeParts[1], out var end) &&
+                    start > 0 && end > 0 && start <= end)
+                {
+                    for (int i = start; i <= end; i++)
+                    {
+                        result.Add(i);
+                    }
+                }
+                else
+                {
+                    // Fail closed for malformed mixed input (e.g., "1,a" or "3-1")
+                    return [];
+                }
+            }
+        }
+        return result;
+    }
+
+    public static string BuildEpisodeKey(int season, int episode) => $"{season}:{episode}";
+
+    public static string[] GetSelectedFiles(List<TorrentFile> files, string? seasonOverride, string? episodeOverride, HashSet<string>? existingEpisodeKeys = null)
+    {
+        var sRange = ParseRange(seasonOverride);
+        var eRange = ParseRange(episodeOverride);
+
         var fileIds = files
             .Where(f =>
             {
-                if (f.Bytes < 50_000_000 && !episodeOverride.HasValue) return false;
+                if (f.Bytes < 50_000_000 && !eRange.Any()) return false;
                 
-                if (seasonOverride.HasValue && !IsSeasonMatch(f.Path, seasonOverride.Value))
+                if (sRange.Any() && !IsSeasonMatch(f.Path, sRange))
                 {
                     return false;
                 }
 
-                if (episodeOverride.HasValue)
+                if (eRange.Any())
                 {
-                    return IsEpisodeMatch(f.Path, episodeOverride.Value, seasonOverride);
+                    return IsEpisodeMatch(f.Path, eRange, sRange.Any() ? sRange : null);
                 }
                 
-                if (existingEpisodes != null && Settings.Instance.SkipExistingEpisodes)
+                if (existingEpisodeKeys != null && Settings.Instance.SkipExistingEpisodes)
                 {
                     var ep = ExtractEpisodeNumber(f.Path);
-                    if (ep.HasValue && existingEpisodes.Contains(ep.Value)) return false;
+                    if (ep.HasValue)
+                    {
+                        var season = ExtractSeasonNumber(f.Path);
+                        if (!season.HasValue && sRange.Count == 1)
+                        {
+                            season = sRange.First();
+                        }
+
+                        if (season.HasValue && existingEpisodeKeys.Contains(BuildEpisodeKey(season.Value, ep.Value))) return false;
+                    }
                 }
 
                 return true;
@@ -153,6 +202,17 @@ public static class Utils
         return Regex.IsMatch(path, fallbackPattern);
     }
 
+    public static bool IsEpisodeMatch(string path, HashSet<int> episodeNumbers, HashSet<int>? seasonNumbers = null)
+    {
+        if (seasonNumbers != null && !IsSeasonMatch(path, seasonNumbers)) return false;
+
+        foreach (var ep in episodeNumbers)
+        {
+            if (IsEpisodeMatch(path, ep)) return true;
+        }
+        return false;
+    }
+
     public static int? ExtractEpisodeNumber(string input)
     {
         if (string.IsNullOrEmpty(input)) return null;
@@ -186,6 +246,15 @@ public static class Utils
     {
         var sPattern = $@"(?i)(?:S|Season\s*)0*{seasonNumber}\b";
         return Regex.IsMatch(path, sPattern);
+    }
+
+    public static bool IsSeasonMatch(string path, HashSet<int> seasonNumbers)
+    {
+        foreach (var s in seasonNumbers)
+        {
+            if (IsSeasonMatch(path, s)) return true;
+        }
+        return false;
     }
 
     private static readonly string[] VideoExtensions = { ".mkv", ".mp4", ".avi", ".m4v", ".mov", ".ts", ".wmv" };

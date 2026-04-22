@@ -4,11 +4,30 @@ namespace MediaDebrid_cli.Services;
 
 public static class PathGenerator
 {
-    public static string GetDestinationPath(string? mediaType, string? title, string? year, string filename, int? season = null)
+    public static string GetDestinationPath(string? mediaType, string? title, string? year, string filename, string? seasonOverride = null)
     {
         var safeFilename = Sanitize(filename);
-        var baseDir = GetSeasonDirectory(mediaType, title, year, season);
+
+        int? actualSeason = null;
+        if (!string.IsNullOrEmpty(seasonOverride) && int.TryParse(seasonOverride, out var s))
+        {
+            actualSeason = s;
+        }
+        else
+        {
+            // Try to extract from filename if no specific single season is provided
+            actualSeason = Utils.ExtractSeasonNumber(filename);
+        }
+
+        var baseDir = GetSeasonDirectory(mediaType, title, year, actualSeason);
         return Path.Combine(baseDir, safeFilename);
+    }
+
+    public static string GetSeasonDirectory(string? mediaType, string? title, string? year, string? season)
+    {
+        int? sNum = null;
+        if (int.TryParse(season, out var s)) sNum = s;
+        return GetSeasonDirectory(mediaType, title, year, sNum);
     }
 
     public static string GetSeasonDirectory(string? mediaType, string? title, string? year, int? season = null)

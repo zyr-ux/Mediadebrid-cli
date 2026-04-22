@@ -229,8 +229,8 @@ public partial class MetadataResolver
         {
             tvDetected = true;
             result.Type = "show";
-            result.Season = season;
-            if (episode > 0) result.Episode = episode;
+            result.Season = season.ToString();
+            if (episode > 0) result.Episode = episode.ToString();
             titleBoundary = Math.Min(titleBoundary, tvBoundary);
             signals.Add(absoluteEpisodeDetected 
                 ? new Signal("TV_ANIME_ABSOLUTE_EP", 0.35, $"Ep: {episode} [Boundary: {tvBoundary}]") 

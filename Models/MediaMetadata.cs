@@ -6,8 +6,8 @@ public class MediaMetadata
     public string Source { get; set; } = string.Empty;
     public string? Year { get; set; }
     public string? Type { get; set; } // movie, show, other, game
-    public int? Season { get; set; }
-    public int? Episode { get; set; }
+    public string? Season { get; set; }
+    public string? Episode { get; set; }
     public string? Version { get; set; }
     public string? Resolution { get; set; }
     public string? Codec { get; set; }
