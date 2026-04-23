@@ -920,12 +920,22 @@ public class TuiApp
     private async Task<bool> ConfirmAsync(string prompt, CancellationToken ct, bool defaultValue = true)
     {
         var choice = defaultValue ? "[[y/n]] (y)" : "[[y/n]] (n)";
-        var result = await ReadLineWithEffectAsync($"{prompt} [green]{choice}[/]: ", ct);
-        
-        if (ct.IsCancellationRequested) throw new OperationCanceledException(ct);
-        if (string.IsNullOrWhiteSpace(result)) return defaultValue;
-        
-        return result.Trim().Equals("y", StringComparison.OrdinalIgnoreCase);
+
+        while (!ct.IsCancellationRequested)
+        {
+            var result = await ReadLineWithEffectAsync($"{prompt} [green]{choice}[/]: ", ct);
+            if (ct.IsCancellationRequested) break;
+
+            if (string.IsNullOrWhiteSpace(result)) return defaultValue;
+
+            var trimmed = result.Trim().ToLowerInvariant();
+            if (trimmed is "y" or "yes") return true;
+            if (trimmed is "n" or "no") return false;
+
+            AnsiConsole.MarkupLine("[red]Please enter 'y' or 'n'.[/]");
+        }
+
+        throw new OperationCanceledException(ct);
     }
 
     private async Task<string?> ReadLineWithEffectAsync(string prompt, CancellationToken ct, ConsoleColor color = ConsoleColor.White, int batchSize = 5, bool secret = false, string? defaultValue = null)
