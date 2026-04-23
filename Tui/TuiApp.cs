@@ -122,7 +122,7 @@ public class TuiApp
             
             AnsiConsole.MarkupLine($"[bold red]X[/] This magnet {statusMsg} on Real-Debrid servers.");
             
-            if (!AnsiConsole.Confirm("Do you want Real-Debrid to cache it for you?"))
+            if (!await ConfirmAsync("Do you want Real-Debrid to cache it for you?", cancellationToken))
             {
                 if (newlyAdded && !string.IsNullOrEmpty(torrentId))
                 {
@@ -405,7 +405,7 @@ public class TuiApp
         {
             if (needsNewline) { AnsiConsole.WriteLine(); needsNewline = false; }
             AnsiConsole.MarkupLine("[bold red]X[/] Magnet is [bold red]not cached[/] on Real-Debrid servers.");
-            if (!AnsiConsole.Confirm("Do you want to wait for Real-Debrid to cache it?"))
+            if (!await ConfirmAsync("Do you want to wait for Real-Debrid to cache it?", cancellationToken))
             {
                 await AnsiConsole.Status().StartAsync("[red]Removing magnet...[/]", async _ => 
                 {
@@ -432,8 +432,6 @@ public class TuiApp
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine("[bold]Starting Downloads...[/]");
         AnsiConsole.MarkupLine("[dim]Controls: [yellow]P[/] Pause | [green]X[/] Save & Exit | [red]Ctrl+C[/] Cancel & Delete[/]");
-        AnsiConsole.WriteLine();
-
 
         var activePaths = new ConcurrentBag<string>();
         Task? downloadLoopTask = null;
@@ -494,14 +492,14 @@ public class TuiApp
         });
 
         // Now ask for confirmations for any detected resumes
-        bool showedResumes = false;
+        needsNewline = true;
         for (int i = 0; i < queuedDownloads.Count; i++)
         {
             var item = queuedDownloads[i];
             if (item.ResumeData != null)
             {
-                showedResumes = true;
-                if (forceResume || AnsiConsole.Confirm($"[yellow]Partial download found for {Markup.Escape(item.Unrestricted.Filename)} ({Utils.FormatBytes(item.ResumeData.Segments.Sum(s => s.Current - s.Start))} / {Utils.FormatBytes(item.ResumeData.TotalSize)}). Resume?[/]"))
+                if (!forceResume && needsNewline) { AnsiConsole.WriteLine(); needsNewline = false; }
+                if (forceResume || await ConfirmAsync($"[yellow]Partial download found for {Markup.Escape(item.Unrestricted.Filename)} ({Utils.FormatBytes(item.ResumeData.Segments.Sum(s => s.Current - s.Start))} / {Utils.FormatBytes(item.ResumeData.TotalSize)}). Resume?[/]", cancellationToken))
                 {
                     // Keep it
                 }
@@ -512,7 +510,8 @@ public class TuiApp
                 }
             }
         }
-        if (showedResumes) AnsiConsole.WriteLine();
+        
+        AnsiConsole.WriteLine();
 
         try
         {
@@ -897,6 +896,17 @@ public class TuiApp
         var json = Utils.GetSettingsJson();
         AnsiConsole.MarkupLine("[cyan]Current Configuration:[/]");
         Console.WriteLine(json);
+    }
+
+    private async Task<bool> ConfirmAsync(string prompt, CancellationToken ct, bool defaultValue = true)
+    {
+        var choice = defaultValue ? "[[y/n]] (y)" : "[[y/n]] (n)";
+        var result = await ReadLineWithEffectAsync($"{prompt} [green]{choice}[/]: ", ct);
+        
+        if (ct.IsCancellationRequested) throw new OperationCanceledException(ct);
+        if (string.IsNullOrWhiteSpace(result)) return defaultValue;
+        
+        return result.Trim().Equals("y", StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task<string?> ReadLineWithEffectAsync(string prompt, CancellationToken ct, ConsoleColor color = ConsoleColor.White, int batchSize = 5, bool secret = false, string? defaultValue = null)
