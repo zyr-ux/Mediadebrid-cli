@@ -58,34 +58,41 @@ public static class Utils
     {
         var sRange = ParseRange(seasonOverride);
         var eRange = ParseRange(episodeOverride);
+        var resolver = new MetadataResolver();
 
         var fileIds = files
             .Where(f =>
             {
                 if (f.Bytes < 50_000_000 && !eRange.Any()) return false;
                 
-                if (sRange.Any() && !IsSeasonMatch(f.Path, sRange))
+                var meta = resolver.ParseName(f.Path);
+                var fileSeasons = ParseRange(meta.Season);
+                var fileEpisodes = ParseRange(meta.Episode);
+
+                if (sRange.Any())
                 {
-                    return false;
+                    if (!fileSeasons.Any(s => sRange.Contains(s))) return false;
                 }
 
                 if (eRange.Any())
                 {
-                    return IsEpisodeMatch(f.Path, eRange, sRange.Any() ? sRange : null);
+                    if (!fileEpisodes.Any(e => eRange.Contains(e))) return false;
                 }
                 
                 if (existingEpisodeKeys != null && Settings.Instance.SkipExistingEpisodes)
                 {
-                    var ep = ExtractEpisodeNumber(f.Path);
-                    if (ep.HasValue)
+                    if (fileEpisodes.Any())
                     {
-                        var season = ExtractSeasonNumber(f.Path);
-                        if (!season.HasValue && sRange.Count == 1)
+                        foreach (var ep in fileEpisodes)
                         {
-                            season = sRange.First();
-                        }
+                            var season = fileSeasons.FirstOrDefault();
+                            if (season == 0 && sRange.Count == 1)
+                            {
+                                season = sRange.First();
+                            }
 
-                        if (season.HasValue && existingEpisodeKeys.Contains(BuildEpisodeKey(season.Value, ep.Value))) return false;
+                            if (season > 0 && existingEpisodeKeys.Contains(BuildEpisodeKey(season, ep))) return false;
+                        }
                     }
                 }
 
@@ -93,19 +100,6 @@ public static class Utils
             })
             .Select(f => f.Id.ToString())
             .ToArray();
-
-        if (!fileIds.Any())
-        {
-            fileIds = files
-                .Where(f => f.Bytes > 50_000_000)
-                .Select(f => f.Id.ToString())
-                .ToArray();
-        }
-
-        if (!fileIds.Any() && files.Any())
-        {
-            fileIds = new[] { files.First().Id.ToString() };
-        }
 
         return fileIds;
     }
@@ -189,74 +183,6 @@ public static class Utils
         return sb.ToString();
     }
 
-    public static bool IsEpisodeMatch(string path, int episodeNumber, int? seasonNumber = null)
-    {
-        if (seasonNumber.HasValue && !IsSeasonMatch(path, seasonNumber.Value)) return false;
-
-        // Try to match episode number in path (e.g., E05, Episode 5, x05)
-        var epPattern = $@"(?i)(?:E|Episode\s*|x)(0*{episodeNumber})\b";
-        if (Regex.IsMatch(path, epPattern)) return true;
-
-        // Fallback for cases like "Show Title 05.mkv"
-        var fallbackPattern = $@"(?i)(?:\s|^)(0*{episodeNumber})\b";
-        return Regex.IsMatch(path, fallbackPattern);
-    }
-
-    public static bool IsEpisodeMatch(string path, HashSet<int> episodeNumbers, HashSet<int>? seasonNumbers = null)
-    {
-        if (seasonNumbers != null && !IsSeasonMatch(path, seasonNumbers)) return false;
-
-        foreach (var ep in episodeNumbers)
-        {
-            if (IsEpisodeMatch(path, ep)) return true;
-        }
-        return false;
-    }
-
-    public static int? ExtractEpisodeNumber(string input)
-    {
-        if (string.IsNullOrEmpty(input)) return null;
-        
-        // Try to match episode number (e.g., E05, Episode 5, x05)
-        var epPattern = @"(?i)(?:E|Episode\s*|x)0*(\d+)\b";
-        var match = Regex.Match(input, epPattern);
-        if (match.Success && int.TryParse(match.Groups[1].Value, out int ep)) return ep;
-
-        // Fallback for cases like "Show Title 05.mkv"
-        var fallbackPattern = @"(?i)(?:\s|^)0*(\d+)\b";
-        match = Regex.Match(input, fallbackPattern);
-        if (match.Success && int.TryParse(match.Groups[1].Value, out int fallbackEp)) return fallbackEp;
-
-        return null;
-    }
-
-    public static int? ExtractSeasonNumber(string input)
-    {
-        if (string.IsNullOrEmpty(input)) return null;
-        
-        // Try to match season number (e.g., S01, Season 1)
-        var sPattern = @"(?i)(?:S|Season\s*)0*(\d+)\b";
-        var match = Regex.Match(input, sPattern);
-        if (match.Success && int.TryParse(match.Groups[1].Value, out int s)) return s;
-
-        return null;
-    }
-
-    public static bool IsSeasonMatch(string path, int seasonNumber)
-    {
-        var sPattern = $@"(?i)(?:S|Season\s*)0*{seasonNumber}\b";
-        return Regex.IsMatch(path, sPattern);
-    }
-
-    public static bool IsSeasonMatch(string path, HashSet<int> seasonNumbers)
-    {
-        foreach (var s in seasonNumbers)
-        {
-            if (IsSeasonMatch(path, s)) return true;
-        }
-        return false;
-    }
-
     private static readonly string[] VideoExtensions = { ".mkv", ".mp4", ".avi", ".m4v", ".mov", ".ts", ".wmv" };
 
     public static HashSet<int> GetExistingEpisodes(string directory)
@@ -264,6 +190,7 @@ public static class Utils
         var existing = new HashSet<int>();
         if (!Directory.Exists(directory)) return existing;
 
+        var resolver = new MetadataResolver();
         try
         {
             var files = Directory.GetFiles(directory, "*.*", SearchOption.TopDirectoryOnly);
@@ -271,8 +198,9 @@ public static class Utils
             {
                 if (VideoExtensions.Contains(Path.GetExtension(file).ToLowerInvariant()))
                 {
-                    var ep = ExtractEpisodeNumber(Path.GetFileName(file));
-                    if (ep.HasValue) existing.Add(ep.Value);
+                    var meta = resolver.ParseName(Path.GetFileName(file));
+                    var eps = ParseRange(meta.Episode);
+                    foreach (var ep in eps) existing.Add(ep);
                 }
             }
         }

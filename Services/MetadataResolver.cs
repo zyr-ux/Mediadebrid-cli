@@ -1,4 +1,3 @@
-using System.Reflection;
 using System.Text.RegularExpressions;
 using MediaDebrid_cli.Models;
 
@@ -9,11 +8,6 @@ public partial class MetadataResolver
     private readonly record struct Token(string Text, int Start, int Length, string NormalizedText);
     private readonly record struct Signal(string Id, double Weight, string Detail);
 
-    private static readonly PropertyInfo? ConfidenceProperty =
-        typeof(MediaMetadata).GetProperty("Confidence", BindingFlags.Public | BindingFlags.Instance);
-        
-    private static readonly PropertyInfo? DebugSignalsProperty =
-        typeof(MediaMetadata).GetProperty("DebugSignals", BindingFlags.Public | BindingFlags.Instance);
 
     private static readonly HashSet<string> KnownExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -129,7 +123,6 @@ public partial class MetadataResolver
         {
             result.Title = string.Empty;
             result.Type = "movie";
-            SetConfidenceIfSupported(result, 0.0);
             return result;
         }
 
@@ -139,7 +132,6 @@ public partial class MetadataResolver
         {
             result.Title = string.Empty;
             result.Type = "movie";
-            SetConfidenceIfSupported(result, 0.0);
             return result;
         }
 
@@ -161,9 +153,6 @@ public partial class MetadataResolver
             .First();
 
         var finalResult = best.Metadata;
-        SetConfidenceIfSupported(finalResult, best.Confidence);
-        SetDebugSignalsIfSupported(finalResult, best.Signals);
-
         return finalResult;
     }
 
@@ -1158,34 +1147,4 @@ public partial class MetadataResolver
 
     private static bool IsKnownExtension(string token) => KnownExtensions.Contains(token);
 
-    private static void SetConfidenceIfSupported(MediaMetadata result, double confidence)
-    {
-        if (ConfidenceProperty is null || !ConfidenceProperty.CanWrite) return;
-        
-        object? value = null;
-        if (ConfidenceProperty.PropertyType == typeof(double)) value = confidence;
-        else if (ConfidenceProperty.PropertyType == typeof(float)) value = (float)confidence;
-        else if (ConfidenceProperty.PropertyType == typeof(decimal)) value = (decimal)confidence;
-        else if (ConfidenceProperty.PropertyType == typeof(int)) value = (int)Math.Round(confidence * 100);
-
-        if (value is not null) ConfidenceProperty.SetValue(result, value);
-    }
-    
-    private static void SetDebugSignalsIfSupported(MediaMetadata result, List<Signal> signals)
-    {
-        if (DebugSignalsProperty is null || !DebugSignalsProperty.CanWrite) return;
-
-        var formatted = signals.Select(s => string.IsNullOrWhiteSpace(s.Detail) 
-            ? $"{s.Id} ({s.Weight:+#.##;-#.##;0})" 
-            : $"{s.Id} ({s.Weight:+#.##;-#.##;0}) [{s.Detail}]").ToList();
-
-        if (DebugSignalsProperty.PropertyType.IsAssignableFrom(typeof(List<string>)))
-        {
-            DebugSignalsProperty.SetValue(result, formatted);
-        }
-        else if (DebugSignalsProperty.PropertyType == typeof(string[]))
-        {
-            DebugSignalsProperty.SetValue(result, formatted.ToArray());
-        }
-    }
 }

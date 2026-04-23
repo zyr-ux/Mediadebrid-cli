@@ -16,7 +16,12 @@ public static class PathGenerator
         else
         {
             // Try to extract from filename if no specific single season is provided
-            actualSeason = Utils.ExtractSeasonNumber(filename);
+            var meta = new MetadataResolver().ParseName(filename);
+            var seasons = Utils.ParseRange(meta.Season);
+            if (seasons.Any())
+            {
+                actualSeason = seasons.First();
+            }
         }
 
         var baseDir = GetSeasonDirectory(mediaType, title, year, actualSeason);
@@ -25,8 +30,8 @@ public static class PathGenerator
 
     public static string GetSeasonDirectory(string? mediaType, string? title, string? year, string? season)
     {
-        int? sNum = null;
-        if (int.TryParse(season, out var s)) sNum = s;
+        var seasons = Utils.ParseRange(season);
+        int? sNum = seasons.Any() ? seasons.First() : null;
         return GetSeasonDirectory(mediaType, title, year, sNum);
     }
 

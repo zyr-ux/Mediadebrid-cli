@@ -216,7 +216,12 @@ public class TuiApp
         {
             if (needsNewline) { AnsiConsole.WriteLine(); needsNewline = false; }
             var seasonsInTorrent = info.Files
-                .Select(f => Utils.ExtractSeasonNumber(f.Path))
+                .Select(f =>
+                {
+                    var meta = _metadataResolver.ParseName(f.Path);
+                    var seasons = Utils.ParseRange(meta.Season);
+                    return seasons.Any() ? (int?)seasons.First() : null;
+                })
                 .Where(s => s.HasValue)
                 .Select(s => s!.Value)
                 .Distinct()
@@ -277,10 +282,18 @@ public class TuiApp
         {
             var sRange = Utils.ParseRange(seasonOverride);
             var episodesInTorrent = info.Files
-                .Where(f => (sRange.Count == 0 || Utils.IsSeasonMatch(f.Path, sRange)) && f.Bytes > 50_000_000)
-                .Select(f => Utils.ExtractEpisodeNumber(f.Path))
-                .Where(e => e.HasValue)
-                .Select(e => e!.Value)
+                .Where(f =>
+                {
+                    if (f.Bytes < 50_000_000) return false;
+                    var meta = _metadataResolver.ParseName(f.Path);
+                    var fileSeasons = Utils.ParseRange(meta.Season);
+                    return sRange.Count == 0 || fileSeasons.Any(s => sRange.Contains(s));
+                })
+                .SelectMany(f =>
+                {
+                    var meta = _metadataResolver.ParseName(f.Path);
+                    return Utils.ParseRange(meta.Episode);
+                })
                 .Distinct()
                 .OrderBy(e => e)
                 .ToList();
@@ -312,9 +325,17 @@ public class TuiApp
                             continue;
                         }
 
-                        if (!info.Files.Any(f => Utils.IsEpisodeMatch(f.Path, parsed, sRange.Any() ? sRange : null)))
+                        if (!info.Files.Any(f =>
                         {
-                            var scope = sRange.Any() ? $"in selected seasons" : "in this torrent";
+                            var meta = _metadataResolver.ParseName(f.Path);
+                            var fileSeasons = Utils.ParseRange(meta.Season);
+                            var fileEpisodes = Utils.ParseRange(meta.Episode);
+                            
+                            if (sRange.Any() && !fileSeasons.Any(s => sRange.Contains(s))) return false;
+                            return fileEpisodes.Any(e => parsed.Contains(e));
+                        }))
+                        {
+                            var scope = sRange.Any() ? "in selected seasons" : "in this torrent";
                             AnsiConsole.MarkupLine($"[red]No episodes from range {input} found {scope}.[/]");
                             continue;
                         }
@@ -339,7 +360,12 @@ public class TuiApp
         if (resolved.Type == "show" && selectedSeasons.Count == 0)
         {
             selectedSeasons = info.Files
-                .Select(f => Utils.ExtractSeasonNumber(f.Path))
+                .Select(f =>
+                {
+                    var meta = _metadataResolver.ParseName(f.Path);
+                    var seasons = Utils.ParseRange(meta.Season);
+                    return seasons.Any() ? (int?)seasons.First() : null;
+                })
                 .Where(s => s.HasValue)
                 .Select(s => s!.Value)
                 .ToHashSet();
@@ -393,7 +419,6 @@ public class TuiApp
                     {
                         ctx.Status("[yellow]Selecting files...[/]");
                         var fileIds = Utils.GetSelectedFiles(info.Files, seasonOverride, episodeOverride, existingEpisodeKeys);
-                        if (!fileIds.Any() && info.Files.Any()) fileIds = [info.Files.First().Id.ToString()];
 
                         if (!fileIds.Any())
                         {
@@ -499,16 +524,19 @@ public class TuiApp
                 // Skip if it's an existing episode (for shows)
                 if (resolved.Type == "show" && Settings.Instance.SkipExistingEpisodes)
                 {
-                    var ep = Utils.ExtractEpisodeNumber(filename);
-                    if (ep.HasValue && existingEpisodeKeys != null)
+                    var meta = _metadataResolver.ParseName(filename);
+                    var episodes = Utils.ParseRange(meta.Episode);
+                    if (episodes.Any() && existingEpisodeKeys != null)
                     {
-                        var sNum = Utils.ExtractSeasonNumber(filename);
+                        var seasons = Utils.ParseRange(meta.Season);
+                        var sNum = seasons.Any() ? (int?)seasons.First() : null;
+                        
                         if (!sNum.HasValue && selectedSeasons.Count == 1)
                         {
                             sNum = selectedSeasons.First();
                         }
 
-                        if (sNum.HasValue && existingEpisodeKeys.Contains(Utils.BuildEpisodeKey(sNum.Value, ep.Value))) continue;
+                        if (sNum.HasValue && episodes.Any(e => existingEpisodeKeys.Contains(Utils.BuildEpisodeKey(sNum.Value, e)))) continue;
                     }
                 }
 
@@ -594,16 +622,19 @@ public class TuiApp
 
                                 if (resolved.Type == "show" && Settings.Instance.SkipExistingEpisodes)
                                 {
-                                    var ep = Utils.ExtractEpisodeNumber(filename);
-                                    if (ep.HasValue && existingEpisodeKeys != null)
+                                    var meta = _metadataResolver.ParseName(filename);
+                                    var episodes = Utils.ParseRange(meta.Episode);
+                                    if (episodes.Any() && existingEpisodeKeys != null)
                                     {
-                                        var sNum = Utils.ExtractSeasonNumber(filename);
+                                        var seasons = Utils.ParseRange(meta.Season);
+                                        var sNum = seasons.Any() ? (int?)seasons.First() : null;
+
                                         if (!sNum.HasValue && selectedSeasons.Count == 1)
                                         {
                                             sNum = selectedSeasons.First();
                                         }
 
-                                        if (sNum.HasValue && existingEpisodeKeys.Contains(Utils.BuildEpisodeKey(sNum.Value, ep.Value)))
+                                        if (sNum.HasValue && episodes.Any(e => existingEpisodeKeys.Contains(Utils.BuildEpisodeKey(sNum.Value, e))))
                                         {
                                             continue;
                                         }
@@ -620,11 +651,13 @@ public class TuiApp
 
                                 if (resolved.Type == "show")
                                 {
-                                    var epNum = Utils.ExtractEpisodeNumber(filename);
-                                    if (epNum.HasValue)
+                                    var meta = _metadataResolver.ParseName(filename);
+                                    var episodes = Utils.ParseRange(meta.Episode);
+                                    if (episodes.Any())
                                     {
-                                        var sNum = Utils.ExtractSeasonNumber(filename) ?? 1;
-                                        _taskEpisodeTexts[progressTask.Id] = $"S{sNum:D2}E{epNum.Value:D2}";
+                                        var seasons = Utils.ParseRange(meta.Season);
+                                        var sNum = seasons.Any() ? seasons.First() : 1;
+                                        _taskEpisodeTexts[progressTask.Id] = $"S{sNum:D2}E{episodes.First():D2}";
                                     }
                                 }
 
