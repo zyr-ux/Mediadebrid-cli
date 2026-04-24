@@ -1,6 +1,11 @@
 #define MyAppName "MediaDebrid"
-#define MyAppVersion GetStringParam('MyAppVersion', '0.0.0')
-#define MyArch GetStringParam('Arch', 'x64')
+#ifndef MyAppVersion
+  #define MyAppVersion "0.0.0"
+#endif
+#ifndef Arch
+  #define Arch "x64"
+#endif
+#define MyArch Arch
 #define MyAppPublisher "zyr-ux"
 #define MyAppURL "https://github.com/zyr-ux/MediaDebrid-cli"
 #define MyAppExeName "mediadebrid.exe"

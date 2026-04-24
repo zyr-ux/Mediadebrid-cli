@@ -58,12 +58,10 @@ jobs:
       # --- Windows: per-arch installer ---
       - name: Build Inno Setup Installer
         if: runner.os == 'Windows'
-        uses: is-software/innosetup-action@v3
+        uses: Minionguyjpro/Inno-Setup-Action@v1.2.7
         with:
-          filepath: installer.iss
-          parameters: >
-            MyAppVersion=${{ github.ref_name }}
-            Arch=${{ matrix.arch }}
+          path: installer.iss
+          options: /DMyAppVersion=${{ github.ref_name }} /DArch=${{ matrix.arch }}
 
       - name: Prepare Windows Artifacts
         if: runner.os == 'Windows'
