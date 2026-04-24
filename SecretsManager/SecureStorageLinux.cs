@@ -7,6 +7,7 @@ using System.Runtime.Versioning;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
+using MediaDebrid_cli.Serialization;
 using Tmds.DBus;
 
 namespace MediaDebrid_cli.SecretsManager;
@@ -245,7 +246,7 @@ public sealed class SecureStorageLinux : ISecureStorage, IDisposable
         dict[key] = Encrypt(value);
 
         var tempFile = _fallbackFilePath + ".tmp";
-        await File.WriteAllTextAsync(tempFile, JsonSerializer.Serialize(dict));
+        await File.WriteAllTextAsync(tempFile, JsonSerializer.Serialize(dict, MediaDebridJsonContext.Default.DictionaryStringString));
 #if NET7_0_OR_GREATER
         try
         {
@@ -274,7 +275,7 @@ public sealed class SecureStorageLinux : ISecureStorage, IDisposable
         {
             // Self-healing: Purge entry if corrupted/tampered
             dict.Remove(key);
-            await File.WriteAllTextAsync(_fallbackFilePath, JsonSerializer.Serialize(dict));
+            await File.WriteAllTextAsync(_fallbackFilePath, JsonSerializer.Serialize(dict, MediaDebridJsonContext.Default.DictionaryStringString));
             return null;
         }
     }
@@ -283,7 +284,7 @@ public sealed class SecureStorageLinux : ISecureStorage, IDisposable
     {
         var dict = await LoadFallbackDictAsync();
         if (dict.Remove(key))
-            await File.WriteAllTextAsync(_fallbackFilePath, JsonSerializer.Serialize(dict));
+            await File.WriteAllTextAsync(_fallbackFilePath, JsonSerializer.Serialize(dict, MediaDebridJsonContext.Default.DictionaryStringString));
     }
 
     private async Task<Dictionary<string, string>> LoadFallbackDictAsync()
@@ -292,7 +293,7 @@ public sealed class SecureStorageLinux : ISecureStorage, IDisposable
         try
         {
             var json = await File.ReadAllTextAsync(_fallbackFilePath);
-            return JsonSerializer.Deserialize<Dictionary<string, string>>(json) ?? new Dictionary<string, string>();
+            return JsonSerializer.Deserialize(json, MediaDebridJsonContext.Default.DictionaryStringString) ?? new Dictionary<string, string>();
         }
         catch (JsonException)
         {

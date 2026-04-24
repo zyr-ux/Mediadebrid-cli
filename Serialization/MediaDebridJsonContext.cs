@@ -17,6 +17,7 @@ internal partial class AppSettingsJsonContext : JsonSerializerContext
 [JsonSerializable(typeof(List<TorrentItem>))]
 [JsonSerializable(typeof(TorrentInfo))]
 [JsonSerializable(typeof(UnrestrictResponse))]
+[JsonSerializable(typeof(Dictionary<string, string>))]
 internal partial class MediaDebridJsonContext : JsonSerializerContext
 {
 }
