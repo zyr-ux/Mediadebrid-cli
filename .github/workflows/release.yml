@@ -12,6 +12,7 @@ jobs:
   build:
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         include:
           # Windows
@@ -37,6 +38,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Strip version prefix
+        id: version
+        shell: bash
+        run: echo "ver=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
@@ -52,7 +58,7 @@ jobs:
           -r ${{ matrix.rid }}
           /p:PublishAot=true
           /p:SelfContained=true
-          /p:Version=${{ github.ref_name }}
+          /p:Version=${{ steps.version.outputs.ver }}
           -o ./publish/${{ matrix.rid }}
 
       # --- Windows: per-arch installer ---
@@ -61,7 +67,7 @@ jobs:
         uses: Minionguyjpro/Inno-Setup-Action@v1.2.7
         with:
           path: installer.iss
-          options: /DMyAppVersion=${{ github.ref_name }} /DArch=${{ matrix.arch }}
+          options: /DMyAppVersion=${{ steps.version.outputs.ver }} /DArch=${{ matrix.arch }}
 
       - name: Prepare Windows Artifacts
         if: runner.os == 'Windows'

@@ -6,6 +6,11 @@
   #define Arch "x64"
 #endif
 #define MyArch Arch
+#if MyArch == "x64"
+  #define ArchISS "x64compatible"
+#else
+  #define ArchISS "arm64"
+#endif
 #define MyAppPublisher "zyr-ux"
 #define MyAppURL "https://github.com/zyr-ux/MediaDebrid-cli"
 #define MyAppExeName "mediadebrid.exe"
@@ -32,8 +37,8 @@ OutputBaseFilename=mediadebrid-win-installer-{#MyArch}
 Compression=lzma
 SolidCompression=yes
 
-ArchitecturesAllowed={#MyArch}
-ArchitecturesInstallIn64BitMode={#MyArch}
+ArchitecturesAllowed={#ArchISS}
+ArchitecturesInstallIn64BitMode={#ArchISS}
 
 ChangesEnvironment=yes
 UninstallDisplayIcon={app}\{#MyAppExeName}
