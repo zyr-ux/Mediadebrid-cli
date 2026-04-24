@@ -55,6 +55,32 @@ dotnet run -- [commands]
 
 ---
 
+## 💻 Installation
+
+### Windows
+The recommended way to install on Windows is via the [GitHub Releases](https://github.com/zyr-ux/MediaDebrid-cli/releases) page. Download and run `MediaDebrid-Setup.exe`. This will:
+*   Install the app to `Program Files`.
+*   Automatically add `mediadebrid` to your system **PATH**.
+*   Provide an uninstaller via Control Panel.
+
+Alternatively, once published, you can use **WinGet**:
+```powershell
+winget install MediaDebrid
+```
+
+### Linux & macOS
+1.  Download the appropriate binary for your system (e.g., `mediadebrid-linux-x64` or `mediadebrid-osx-x64`) from the [Releases](https://github.com/zyr-ux/MediaDebrid-cli/releases) page.
+2.  Make the binary executable:
+    ```bash
+    chmod +x mediadebrid-linux-x64
+    ```
+3.  (Optional) Move it to your local bin directory for global access:
+    ```bash
+    sudo mv mediadebrid-linux-x64 /usr/local/bin/mediadebrid
+    ```
+
+---
+
 ## 📖 Usage
 
 ### Commands
