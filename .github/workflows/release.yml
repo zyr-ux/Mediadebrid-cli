@@ -84,19 +84,22 @@ jobs:
             mv Output/*.exe ./publish/${{ matrix.rid }}/mediadebrid-win-installer-arm64.exe
           fi
 
-      # --- Unix: chmod + rename ---
+      # --- Unix: chmod + tarball ---
       - name: Prepare Unix Artifacts
         if: runner.os != 'Windows'
         run: |
           chmod +x ./publish/${{ matrix.rid }}/mediadebrid
 
+          cd ./publish/${{ matrix.rid }}
           if [[ "${{ matrix.rid }}" == "osx-x64" ]]; then
-            mv ./publish/${{ matrix.rid }}/mediadebrid ./publish/${{ matrix.rid }}/mediadebrid-mac-x64
+            tar -czvf mediadebrid-macos-x64.tar.gz mediadebrid
           elif [[ "${{ matrix.rid }}" == "osx-arm64" ]]; then
-            mv ./publish/${{ matrix.rid }}/mediadebrid ./publish/${{ matrix.rid }}/mediadebrid-mac-arm64
+            tar -czvf mediadebrid-macos-arm64.tar.gz mediadebrid
           else
-            mv ./publish/${{ matrix.rid }}/mediadebrid ./publish/${{ matrix.rid }}/mediadebrid-${{ matrix.rid }}
+            tar -czvf mediadebrid-${{ matrix.rid }}.tar.gz mediadebrid
           fi
+          rm mediadebrid
+          cd ../../
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
@@ -120,9 +123,9 @@ jobs:
           files: |
             mediadebrid-win-x64/mediadebrid-win-installer-x64.exe
             mediadebrid-win-arm64/mediadebrid-win-installer-arm64.exe
-            mediadebrid-linux-x64/mediadebrid-linux-x64
-            mediadebrid-linux-arm64/mediadebrid-linux-arm64
-            mediadebrid-osx-x64/mediadebrid-mac-x64
-            mediadebrid-osx-arm64/mediadebrid-mac-arm64
+            mediadebrid-linux-x64/mediadebrid-linux-x64.tar.gz
+            mediadebrid-linux-arm64/mediadebrid-linux-arm64.tar.gz
+            mediadebrid-osx-x64/mediadebrid-macos-x64.tar.gz
+            mediadebrid-osx-arm64/mediadebrid-macos-arm64.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
