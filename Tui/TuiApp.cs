@@ -977,9 +977,9 @@ public class TuiApp
             string value = key switch
             {
                 "real_debrid_api_key" => Settings.Instance.RealDebridApiToken,
-                "media_root" => Settings.Instance.MediaRoot,
-                "games_root" => Settings.Instance.GamesRoot,
-                "others_root" => Settings.Instance.OthersRoot,
+                "media_root" => Settings.IsDefault(Settings.Instance.MediaRoot) ? $"default ({Settings.MediaRoot})" : Settings.Instance.MediaRoot,
+                "games_root" => Settings.IsDefault(Settings.Instance.GamesRoot) ? $"default ({Settings.GamesRoot})" : Settings.Instance.GamesRoot,
+                "others_root" => Settings.IsDefault(Settings.Instance.OthersRoot) ? $"default ({Settings.OthersRoot})" : Settings.Instance.OthersRoot,
                 "parallel_download" => Settings.Instance.ParallelDownloadEnabled.ToString().ToLower(),
                 "connections_per_file" => Settings.Instance.ConnectionsPerFile.ToString(),
                 "skip_existing_episodes" => Settings.Instance.SkipExistingEpisodes.ToString().ToLower(),

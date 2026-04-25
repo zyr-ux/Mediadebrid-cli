@@ -28,7 +28,7 @@ public static class Settings
     public static string GamesRoot => IsDefault(Instance.GamesRoot) ? DefaultBaseRoot : Instance.GamesRoot;
     public static string OthersRoot => IsDefault(Instance.OthersRoot) ? DefaultBaseRoot : Instance.OthersRoot;
 
-    private static bool IsDefault(string path) => string.IsNullOrWhiteSpace(path) || path.Equals("default", StringComparison.OrdinalIgnoreCase);
+    public static bool IsDefault(string path) => string.IsNullOrWhiteSpace(path) || path.Equals("default", StringComparison.OrdinalIgnoreCase);
 
     public static bool ParallelDownloadEnabled => Instance.ParallelDownloadEnabled;
     public static int ConnectionsPerFile => Instance.ConnectionsPerFile;
