@@ -409,9 +409,8 @@ public class TuiApp
                             {
                                 throw new TerminationException($"[bold red]All selected episodes ({episodeOverride}) already exist in your local library.[/]");
                             }
-
-                            AnsiConsole.MarkupLine($"[yellow]X[/] Found [cyan]{existingEpisodeKeys.Count}[/] existing episodes in local library. They will be skipped.");
                             AnsiConsole.WriteLine();
+                            AnsiConsole.MarkupLine($"[yellow]X[/] Found [cyan]{existingEpisodeKeys.Count}[/] existing episodes in local library. They will be skipped.");
                         }
                     }
 
