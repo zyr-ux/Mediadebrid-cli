@@ -17,6 +17,7 @@ public class TuiApp
     private readonly ConcurrentDictionary<int, TaskDisplayStatus> _taskDisplayStatuses;
     private readonly ConcurrentDictionary<int, int> _frozenFrames;
     private readonly ConcurrentDictionary<int, string> _taskEpisodeTexts;
+    private readonly ConcurrentDictionary<int, string> _taskOriginalNames;
 
     private static readonly Spinner AppSpinner = Spinner.Known.Arc;
 
@@ -34,6 +35,7 @@ public class TuiApp
         _taskDisplayStatuses = new ConcurrentDictionary<int, TaskDisplayStatus>();
         _frozenFrames = new ConcurrentDictionary<int, int>();
         _taskEpisodeTexts = new ConcurrentDictionary<int, string>();
+        _taskOriginalNames = new ConcurrentDictionary<int, string>();
     }
 
     private RealDebridClient GetClient() => _client ??= new RealDebridClient();
@@ -51,6 +53,11 @@ public class TuiApp
         }
 
         _progressTasks.Clear();
+        _taskSpeeds.Clear();
+        _taskDisplayStatuses.Clear();
+        _frozenFrames.Clear();
+        _taskEpisodeTexts.Clear();
+        _taskOriginalNames.Clear();
 
         try
         {
@@ -647,6 +654,7 @@ public class TuiApp
 
                                 progressTask = ctx.AddTask($"[cyan]{Markup.Escape(displayFilename)}[/]", new ProgressTaskSettings { AutoStart = false });
                                 _progressTasks[progressKey] = progressTask;
+                                _taskOriginalNames[progressTask.Id] = displayFilename;
 
                                 if (resolved.Type == "show")
                                 {
@@ -1202,6 +1210,10 @@ public class TuiApp
             if (e.BytesDownloaded >= e.TotalBytes && e.TotalBytes > 0)
             {
                 _taskDisplayStatuses[task.Id] = TaskDisplayStatus.Finished;
+                if (_taskOriginalNames.TryGetValue(task.Id, out var originalName))
+                {
+                    task.Description = $"[cyan]{Markup.Escape(originalName)}[/]";
+                }
             }
         }
     }
@@ -1227,16 +1239,18 @@ public class TuiApp
 
         foreach (var task in _progressTasks.Values)
         {
-            if (task.IsFinished) continue;
+            if (!_taskOriginalNames.TryGetValue(task.Id, out var originalName)) continue;
 
-            var current = task.Description;
-            if (isPaused && !current.StartsWith("[yellow]PAUSED[/]"))
+            if (isPaused && !task.IsFinished)
             {
-                task.Description = $"[yellow]PAUSED[/] {current}";
+                // Truncate filename to 33 chars to fit "PAUSED " (7 chars) within the 40 char limit
+                var truncated = originalName.Length > 33 ? originalName[..30] + "..." : originalName;
+                task.Description = $"[yellow]PAUSED[/] [cyan]{Markup.Escape(truncated)}[/]";
             }
-            else if (!isPaused && current.StartsWith("[yellow]PAUSED[/]"))
+            else
             {
-                task.Description = current.Replace("[yellow]PAUSED[/] ", "");
+                // Restore original name for unpaused or finished tasks
+                task.Description = $"[cyan]{Markup.Escape(originalName)}[/]";
             }
         }
     }
