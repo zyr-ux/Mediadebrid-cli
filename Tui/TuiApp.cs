@@ -751,6 +751,11 @@ public class TuiApp
                                     if (t.IsFinished) continue;
                                     _taskDisplayStatuses[t.Id] = TaskDisplayStatus.Saved;
                                     _frozenFrames[t.Id] = frameIdx;
+                                    if (_taskOriginalNames.TryGetValue(t.Id, out var origName))
+                                    {
+                                        var truncated = origName.Length > 33 ? origName[..30] + "..." : origName;
+                                        t.Description = $"[blue]SAVED[/] [cyan]{Markup.Escape(truncated)}[/]";
+                                    }
                                 }
                                 linkedCts.Cancel();
                                 break;
