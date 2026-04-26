@@ -756,7 +756,7 @@ public class TuiApp
                                     if (_taskOriginalNames.TryGetValue(t.Id, out var origName))
                                     {
                                         var truncated = origName.Length > 33 ? origName[..30] + "..." : origName;
-                                        t.Description = $"[blue]SAVED[/] [cyan]{Markup.Escape(truncated)}[/]";
+                                        t.Description = $"[blue]SAVED [/] [cyan]{Markup.Escape(truncated)}[/]";
                                     }
                                 }
                                 linkedCts.Cancel();
