@@ -274,6 +274,7 @@ public class TuiApp
                         seasonOverride = input;
                         resolved.Season = input;
                         resolved.Destination = PathGenerator.GetSeasonDirectory(resolved.Type, resolved.Title, resolved.Year); // Generic dir for ranges
+                        AnsiConsole.WriteLine();
                         AnsiConsole.MarkupLine($"[bold green]✓[/] Selected seasons [cyan]{input}[/].");
                         RenderMetadataPanel(resolved);
                     }
@@ -355,6 +356,7 @@ public class TuiApp
                     {
                         episodeOverride = input;
                         resolved.Episode = input;
+                        AnsiConsole.WriteLine();
                         AnsiConsole.MarkupLine($"[bold green]✓[/] Selected episodes [cyan]{input}[/].");
                     }
                 }
