@@ -397,31 +397,76 @@ public class TuiApp
 
                 try
                 {
-                    if (resolved.Type == "show" && Settings.Instance.SkipExistingEpisodes)
+                    if (Settings.Instance.SkipExistingEpisodes)
                     {
-                        var seasonsToCheck = selectedSeasons;
-
-                        existingEpisodeKeys = new HashSet<string>();
-                        foreach (var s in seasonsToCheck)
+                        if (resolved.Type == "show")
                         {
-                            var seasonDir = PathGenerator.GetSeasonDirectory(resolved.Type, resolved.Title, resolved.Year, s);
-                            var existingInSeason = Utils.GetExistingEpisodes(seasonDir);
-                            foreach (var ep in existingInSeason)
+                            var seasonsToCheck = selectedSeasons;
+
+                            existingEpisodeKeys = new HashSet<string>();
+                            foreach (var s in seasonsToCheck)
                             {
-                                existingEpisodeKeys.Add(Utils.BuildEpisodeKey(s, ep));
+                                var seasonDir = PathGenerator.GetSeasonDirectory(resolved.Type, resolved.Title, resolved.Year, s);
+                                var existingInSeason = Utils.GetExistingEpisodes(seasonDir);
+                                foreach (var ep in existingInSeason)
+                                {
+                                    existingEpisodeKeys.Add(Utils.BuildEpisodeKey(s, ep));
+                                }
+                            }
+
+                            if (existingEpisodeKeys.Any())
+                            {
+                                var epRange = Utils.ParseRange(episodeOverride);
+                                var sRange = Utils.ParseRange(seasonOverride);
+
+                                // Find all episodes in the torrent that match our selection criteria
+                                var episodesInTorrent = info.Files
+                                    .Where(f => {
+                                        if (f.Bytes < 50_000_000 && !epRange.Any()) return false;
+                                        var meta = _metadataResolver.ParseName(f.Path);
+                                        var fileSeasons = Utils.ParseRange(meta.Season);
+                                        return !sRange.Any() || fileSeasons.Any(s => sRange.Contains(s));
+                                    })
+                                    .SelectMany(f => {
+                                        var meta = _metadataResolver.ParseName(f.Path);
+                                        var fileEpisodes = Utils.ParseRange(meta.Episode);
+                                        var fileSeasons = Utils.ParseRange(meta.Season);
+                                        var s = fileSeasons.FirstOrDefault();
+                                        if (s == 0 && sRange.Count == 1) s = sRange.First();
+                                        if (s == 0 && seasonsToCheck.Count == 1) s = seasonsToCheck.First();
+                                        return fileEpisodes.Select(e => Utils.BuildEpisodeKey(s > 0 ? s : 1, e));
+                                    })
+                                    .ToHashSet();
+
+                                if (episodesInTorrent.Any() && episodesInTorrent.All(key => existingEpisodeKeys.Contains(key)))
+                                {
+                                    var scope = (selectedSeasons.Count > 1 && string.IsNullOrEmpty(episodeOverride))
+                                        ? "All seasons and episodes of this show"
+                                        : (string.IsNullOrEmpty(episodeOverride) ? "All episodes of this show" : $"All selected episodes of this show ({episodeOverride})");
+                                    throw new TerminationException($"[bold red]{scope} already exist in your local library.[/]");
+                                }
+
+                                AnsiConsole.WriteLine();
+                                AnsiConsole.MarkupLine($"[yellow]X[/] Found [cyan]{existingEpisodeKeys.Count}[/] existing episodes in local library. They will be skipped.");
                             }
                         }
-
-                        if (existingEpisodeKeys.Any())
+                        else
                         {
-                            var epRange = Utils.ParseRange(episodeOverride);
-                            var allSelectedExist = epRange.Any() && seasonsToCheck.All(s => epRange.All(e => existingEpisodeKeys.Contains(Utils.BuildEpisodeKey(s, e))));
-                            if (allSelectedExist)
+                            // Movie, Game, Other logic
+                            var largestFile = info.Files.OrderByDescending(f => f.Bytes).FirstOrDefault();
+                            if (largestFile != null)
                             {
-                                throw new TerminationException($"[bold red]All selected episodes ({episodeOverride}) already exist in your local library.[/]");
+                                var destPath = PathGenerator.GetDestinationPath(resolved.Type, resolved.Title, resolved.Year, largestFile.Path, seasonOverride);
+                                if (File.Exists(destPath))
+                                {
+                                    var typeLabel = resolved.Type switch {
+                                        "movie" => "Movie",
+                                        "game" => "Game",
+                                        _ => "File"
+                                    };
+                                    throw new TerminationException($"[bold red]{typeLabel} \"{resolved.Title}\" already exists in your local library.[/]");
+                                }
                             }
-                            AnsiConsole.WriteLine();
-                            AnsiConsole.MarkupLine($"[yellow]X[/] Found [cyan]{existingEpisodeKeys.Count}[/] existing episodes in local library. They will be skipped.");
                         }
                     }
 
@@ -591,6 +636,17 @@ public class TuiApp
             }
         }
         
+        if (queuedDownloads.Count == 0 && !generateUnresLinks)
+        {
+            var typeLabel = resolved.Type switch {
+                "show" => "episodes",
+                "movie" => "files",
+                "game" => "files",
+                _ => "files"
+            };
+            throw new TerminationException($"[bold red]All selected {typeLabel} already exist in your local library.[/]");
+        }
+
         AnsiConsole.WriteLine();
 
         try
